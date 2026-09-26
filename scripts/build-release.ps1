@@ -118,6 +118,12 @@ try {
     cargo test --workspace
     if ($LASTEXITCODE -ne 0) { throw "cargo test failed with exit code $LASTEXITCODE" }
 
+    # The changelog the news page shows is built from the history, and nothing else
+    # produces it: without this a release ships whatever app/data/changelog.json
+    # happened to lie in the working tree.
+    node scripts/changelog.mjs
+    if ($LASTEXITCODE -ne 0) { throw "the changelog build failed with exit code $LASTEXITCODE" }
+
     $config = Get-Content -Raw $templatePath
     $config = $config.Replace('__TAURI_UPDATER_PUBKEY__', $env:TAURI_UPDATER_PUBKEY)
     $config = $config.Replace('__RELEASE_VERSION__', $Version)
