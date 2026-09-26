@@ -6027,6 +6027,7 @@ async fn create_music_job(
                 message: "Submitted to mm-server. Progress is phase-only: queued, running, completed, failed, or cancelled.".into(),
             };
             state.jobs.write().await.insert(job.id.clone(), job.clone());
+            spawn_job_watcher(state.clone(), job.id.clone());
             (StatusCode::ACCEPTED, Json(job))
         }
         Err(error) => {
@@ -6102,6 +6103,7 @@ async fn replay_music_job(
         }
     }
     state.jobs.write().await.insert(job.id.clone(), job.clone());
+    spawn_job_watcher(state.clone(), job.id.clone());
     Ok((StatusCode::ACCEPTED, Json(job)))
 }
 
@@ -6204,50 +6206,77 @@ async fn music_job_status(
     State(state): State<AppState>,
     Path(job_id): Path<String>,
 ) -> Result<Json<MusicJob>, (StatusCode, Json<ApiError>)> {
-    let existing = state
+    state
         .jobs
         .read()
         .await
         .get(&job_id)
         .cloned()
-        .ok_or_else(|| api_error(StatusCode::NOT_FOUND, "Music job was not found.".into()))?;
-    if existing.engine_id != PRIMARY_MUSIC_ENGINE_ID
-        || matches!(existing.status, MusicJobStatus::Cancelled | MusicJobStatus::Failed)
-    {
-        return Ok(Json(existing));
-    }
-    let remote = state.music_server.job(&job_id).await.map_err(|error| {
-        api_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            format!("mm-server status is unavailable: {error}"),
-        )
-    })?;
-    let imported = if remote.status == "done" {
-        Some(import_completed_mm_result(&state, &existing, &job_id).await)
-    } else { None };
-    let mut jobs = state.jobs.write().await;
-    let job = jobs
-        .get_mut(&job_id)
-        .ok_or_else(|| api_error(StatusCode::NOT_FOUND, "Music job was not found.".into()))?;
-    if let Some(imported) = imported {
-        match imported {
-            Ok(songs) => {
-                job.status = MusicJobStatus::Completed;
-                job.phase = MusicJobPhase::Completed;
-                job.song = songs.first().cloned();
-                job.songs = songs;
-                job.message = "mm-server completed this job and its result was imported into the studio library.".into();
+        .map(Json)
+        .ok_or_else(|| api_error(StatusCode::NOT_FOUND, "Music job was not found.".into()))
+}
+
+/// Follows one engine job to its end and imports what it made.
+///
+/// The service owns this, not the window: every poll used to import the
+/// finished result itself, so polls arriving while one import was still
+/// encoding the MP3 each stored the same track again. Only this task imports,
+/// and a track finished while the window was reloading or closed still lands
+/// in the library.
+fn spawn_job_watcher(state: AppState, job_id: String) {
+    tokio::spawn(async move {
+        let mut unreachable = 0u32;
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+            let Some(existing) = state.jobs.read().await.get(&job_id).cloned() else { return };
+            if matches!(existing.status, MusicJobStatus::Completed | MusicJobStatus::Failed | MusicJobStatus::Cancelled) {
+                return;
             }
-            Err(error) => {
-                job.status = MusicJobStatus::Failed;
-                job.phase = MusicJobPhase::Failed;
-                job.message = format!("mm-server completed the job, but the studio could not safely import its result: {error}");
+            let remote = match state.music_server.job(&job_id).await {
+                Ok(remote) => {
+                    unreachable = 0;
+                    remote
+                }
+                Err(error) => {
+                    // The engine restarting drops its job table; a few missed
+                    // polls are a restart, a minute of them is a lost job.
+                    unreachable += 1;
+                    if unreachable >= 60 {
+                        if let Some(job) = state.jobs.write().await.get_mut(&job_id) {
+                            job.status = MusicJobStatus::Failed;
+                            job.phase = MusicJobPhase::Failed;
+                            job.message = format!("mm-server stopped answering about this job: {error}");
+                        }
+                        return;
+                    }
+                    continue;
+                }
+            };
+            if remote.status == "done" {
+                let imported = import_completed_mm_result(&state, &existing, &job_id).await;
+                let mut jobs = state.jobs.write().await;
+                let Some(job) = jobs.get_mut(&job_id) else { return };
+                match imported {
+                    Ok(songs) => {
+                        job.status = MusicJobStatus::Completed;
+                        job.phase = MusicJobPhase::Completed;
+                        job.song = songs.first().cloned();
+                        job.songs = songs;
+                        job.message = "mm-server completed this job and its result was imported into the studio library.".into();
+                    }
+                    Err(error) => {
+                        job.status = MusicJobStatus::Failed;
+                        job.phase = MusicJobPhase::Failed;
+                        job.message = format!("mm-server completed the job, but the studio could not safely import its result: {error}");
+                    }
+                }
+                return;
+            }
+            if let Some(job) = state.jobs.write().await.get_mut(&job_id) {
+                apply_remote_status(job, &remote.status);
             }
         }
-    } else {
-        apply_remote_status(job, &remote.status);
-    }
-    Ok(Json(job.clone()))
+    });
 }
 
 async fn import_completed_mm_result(state: &AppState, job: &MusicJob, job_id: &str) -> anyhow::Result<Vec<CompletedSong>> {
