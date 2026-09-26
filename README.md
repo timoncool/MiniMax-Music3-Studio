@@ -51,6 +51,11 @@ Code, save [docs/mcp-skill.md](docs/mcp-skill.md) as `~/.claude/skills/minimax-m
 
 ## What you can do
 
+- **A player of its own** — a ten-band equalizer on Winamp's frequencies with its presets,
+  your own and .EQF files; a MilkDrop visualiser with hundreds of presets or a spectrum in ten
+  looks, over the studio, fullscreen or in its own window; and a Winamp mode that turns the whole
+  window into a skinned Winamp 2 — ten skins included, the Winamp Skin Museum one click away,
+  Ctrl+M to switch. The song, its place and the equalizer carry over both ways.
 - **Generate music locally** with the complete Music3 component set: caption, lyrics,
   duration, DiT steps, LM CFG and top-k, DiT CFG, peak clip, separate DiT and LM seeds,
   several songs per prompt and several variations per song, MP3 or 16/24/32-bit WAV.
@@ -130,6 +135,8 @@ Code, save [docs/mcp-skill.md](docs/mcp-skill.md) as `~/.claude/skills/minimax-m
 
 | | |
 |---|---|
+| ![The equalizer and MilkDrop](docs/screenshots/en-14-listen.png) | ![The Winamp mode](docs/screenshots/en-15-winamp.png) |
+| The equalizer with its curve and MilkDrop over the studio, as the song plays | The whole window as Winamp 2: equalizer, playlist and MilkDrop, skinned |
 | ![Any track to MIDI](docs/screenshots/en-10-midi.png) | ![Your own LoRA](docs/screenshots/en-09-training.png) |
 | Any track to MIDI — a piano roll of every instrument, played against the original | Your own LoRA trained on the card — the loss as it learns, a checkpoint every 100 steps |
 | ![A dataset](docs/screenshots/en-08-dataset.png) | ![LoRA catalogue](docs/screenshots/en-07-lora.png) |
