@@ -481,6 +481,10 @@ the ACE sources live in their own repository. MiniMax Music3 weights are governe
 own community license — commercial use must display the MiniMax-Music3 name and implement
 the safeguards that license requires.
 
+One bundled component is under a different licence: the visualiser's spectrum looks come from
+[audioMotion-analyzer](https://github.com/hvianna/audioMotion-analyzer), which is **AGPL-3.0**;
+its source, like the studio's, is public.
+
 What changed and when is in [CHANGELOG.md](CHANGELOG.md).
 
 ## Acknowledgements
