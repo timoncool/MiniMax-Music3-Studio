@@ -1044,6 +1044,7 @@ impl Training {
             bail!("a training run is already going");
         }
         let run_dir = self.run_dir(run_id)?;
+        let edit = self.edits.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut run = self.run(run_id)?;
         let mut recipe = run.recipe.clone();
         recipe.steps = steps;
@@ -1060,6 +1061,7 @@ impl Training {
         run.steps.retain(|record| record.step <= from);
         run.continuations.push(Continuation { from, to: steps, at: now() });
         self.save_run(&run)?;
+        drop(edit);
         let cancel = Arc::new(tokio::sync::Notify::new());
         *active = Some(Active { run_id: run_id.to_string(), cancel: cancel.clone() });
         drop(active);
