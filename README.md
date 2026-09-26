@@ -54,7 +54,8 @@ Code, save [docs/mcp-skill.md](docs/mcp-skill.md) as `~/.claude/skills/minimax-m
 - **A player of its own** — a ten-band equalizer on Winamp's frequencies with its presets,
   your own and .EQF files; a MilkDrop visualiser with hundreds of presets or a spectrum in ten
   looks, over the studio, fullscreen or in its own window; and a Winamp mode that turns the whole
-  window into a skinned Winamp 2 — ten skins included, the Winamp Skin Museum one click away,
+  window into a skinned Winamp 2 whose windows move apart, dock and resize — the original skin
+  and ten more included, sharp at any scale, the Winamp Skin Museum one click away,
   Ctrl+M to switch. The song, its place and the equalizer carry over both ways.
 - **Generate music locally** with the complete Music3 component set: caption, lyrics,
   duration, DiT steps, LM CFG and top-k, DiT CFG, peak clip, separate DiT and LM seeds,
