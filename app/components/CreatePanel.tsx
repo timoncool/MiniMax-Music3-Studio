@@ -488,7 +488,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
   // that went quiet was to close the studio.
   // Without an assistant the wands open its settings: hidden, they left no
   // sign that the studio can write a style or lyrics at all.
-  const openAssistantSetup = () => window.dispatchEvent(new CustomEvent('mm3:open-settings', { detail: 'models' }));
+  const openAssistantSetup = () => window.dispatchEvent(new CustomEvent('mm3:open-settings', { detail: 'models:assistant' }));
 
   const assistRun = useRef<AbortController | null>(null);
   const stopAssistant = () => {
@@ -759,7 +759,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
                   is half an instruction. */}
               <button
                 type="button"
-                onClick={() => window.dispatchEvent(new CustomEvent('mm3:open-settings', { detail: 'models' }))}
+                onClick={() => window.dispatchEvent(new CustomEvent('mm3:open-settings', { detail: 'models:assistant' }))}
                 className="mt-3 inline-flex items-center gap-1 rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:border-pink-400 hover:text-pink-600 dark:border-white/15 dark:text-zinc-300"
               >
                 <Settings2 size={13} />
