@@ -7303,9 +7303,11 @@ impl MmServerClient {
             .unwrap_or_else(|_| "http://127.0.0.1:8086".into())
             .trim_end_matches('/')
             .to_owned();
+        // the engine's server drops a connection idle for 5 s; a pooled one can be
+        // taken as it closes and the request is lost, so every request opens its own
         Self {
             base_url,
-            http: net::client(),
+            http: net::builder().pool_max_idle_per_host(0).build().expect("an HTTP client with a proxy callback builds"),
         }
     }
 
