@@ -278,13 +278,12 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
   // changes a request until a file is chosen: no file, no field, and the
   // studio behaves exactly as it did before this existed.
   const [seed, setSeed] = useState('');
-  const [peakClip, setPeakClip] = useState('');
   // Quality first, not "quick listen": the engine's own defaults are mp3 at
   // 128 kbps, which throws away what the vocoder produced.
   const [mp3Bitrate, setMp3Bitrate] = useState('320');
   // The engine's own default is 128 kbps, which throws away what the vocoder
   // produced; 320 is the top the encoder offers and costs a few megabytes.
-  const [format, setFormat] = useState<Music3Request['output_format']>('mp3');
+  const [format, setFormat] = useState<Music3Request['output_format']>('flac');
   const [models, setModels] = useState<Record<string, string>>({});
   const [adapters, setAdapters] = useState<AdapterUse[]>([]);
 
@@ -385,9 +384,8 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
     setLmCfg(asString('lm_cfg'));
     setLmTopK(asString('lm_top_k'));
     setDitCfg(asString('dit_cfg'));
-    setPeakClip(asString('peak_clip'));
     setMp3Bitrate(asString('mp3_bitrate'));
-    if (typeof settings.output_format === 'string') setFormat(settings.output_format as Music3Request['output_format']);
+    if (settings.output_format === 'mp3' || settings.output_format === 'flac') setFormat(settings.output_format);
     // A song made without LoRA reuses without it, whatever was picked before.
     setAdapters(usesFromSettings(settings as Record<string, unknown>));
   }, [initialData]);
@@ -396,7 +394,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
     setName(''); setGlobalMetadata(''); setVocalDetails(''); setArrangement(''); setLyrics(''); setInstrumental(false);
     setDuration(keptDuration()); setLmSeed(''); setLmCfg(''); setLmTopK(''); setAudioCodes('');
     setSteps(''); setDitCfg(''); setSynthBatch(''); setSeed('');
-    setPeakClip(''); setMp3Bitrate('320'); setFormat('mp3'); setModels({}); setAdapters([]);
+    setMp3Bitrate('320'); setFormat('flac'); setModels({}); setAdapters([]);
     setError(null);
   };
 
@@ -428,7 +426,6 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
       lm_batch_size: 1,
       synth_batch_size: numberOrUndefined(synthBatch) ?? 1,
       dit_cfg: numberOrUndefined(ditCfg) ?? 1.7,
-      peak_clip: numberOrUndefined(peakClip) ?? 10,
       output_format: format,
       mp3_bitrate: numberOrUndefined(mp3Bitrate) ?? 320,
     };
@@ -469,10 +466,9 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
       setDitCfg(asString(parsed.dit_cfg));
       setSynthBatch(asString(parsed.synth_batch_size));
       setSeed(asString(parsed.seed));
-      setPeakClip(asString(parsed.peak_clip));
       setMp3Bitrate(asString(parsed.mp3_bitrate));
       if (typeof parsed.audio_codes === 'string') setAudioCodes(parsed.audio_codes);
-      if (typeof parsed.output_format === 'string') setFormat(parsed.output_format as Music3Request['output_format']);
+      if (parsed.output_format === 'mp3' || parsed.output_format === 'flac') setFormat(parsed.output_format);
       if (Array.isArray(parsed.adapters)) setAdapters(usesFromSettings(parsed));
       setError(null);
     } catch {
@@ -675,7 +671,6 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
     cover_prompt: [coverPrompt, setCoverPrompt],
     output_format: [format, (value) => setFormat(value as Music3Request['output_format'])],
     mp3_bitrate: [mp3Bitrate, setMp3Bitrate],
-    peak_clip: [peakClip, setPeakClip],
   };
   useBridgeCommand('create_get', () => ({
     mode,
@@ -689,7 +684,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
     const fields = (args.fields && typeof args.fields === 'object' ? args.fields : args) as Record<string, unknown>;
     // every field is checked before any changes, so a refused call leaves the form as it was
     const extra = ['caption', 'mode', 'instrumental', 'randomize_seed', 'adapters'];
-    const choices: Record<string, string[]> = { mode: ['studio', 'simple'], output_format: ['mp3', 'wav16', 'wav24', 'wav32'] };
+    const choices: Record<string, string[]> = { mode: ['studio', 'simple'], output_format: ['flac', 'mp3'] };
     const unknown = Object.keys(fields).filter(key => !formFields[key] && !extra.includes(key));
     if (unknown.length) throw new Error(`Unknown fields: ${unknown.join(', ')}. The form has: ${[...Object.keys(formFields), ...extra].join(', ')}.`);
     for (const [key, allowed] of Object.entries(choices)) {
@@ -730,7 +725,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
   const resetParameters = () => {
     chooseDuration(''); setLmSeed(''); setLmCfg(''); setLmTopK(''); setAudioCodes('');
     setSteps(''); setDitCfg(''); setSynthBatch(''); setSeed(''); setRandomizeSeed(true);
-    setPeakClip(''); setMp3Bitrate('320'); setFormat('mp3'); setModels({});
+    setMp3Bitrate('320'); setFormat('flac'); setModels({});
   };
 
   const overBudget = promptTokens > MAX_PROMPT_TOKENS;
@@ -1056,16 +1051,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
 
                 <div className="border-t border-zinc-100 pt-4 dark:border-white/5">
                   <Stage title={t('stageOutput')} hint={t('stageOutputHint')}>
-                  <SliderRow
-                    label={t('peakClipLabel')}
-                    value={peakClip}
-                    fallback={Number(defaults.peak_clip ?? 10)}
-                    min={0}
-                    max={30}
-                    step={1}
-                    onChange={setPeakClip}
-                  />
-                  <div className="mt-3 grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     <Field label={t('mp3Bitrate')}>
                       <select value={mp3Bitrate || String(defaults.mp3_bitrate ?? 320)} onChange={event => setMp3Bitrate(event.target.value)} disabled={format !== 'mp3'} className={CONTROL}>
                         {['128', '192', '256', '320'].map(rate => <option key={rate} value={rate}>{rate} kbps</option>)}
@@ -1073,14 +1059,12 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
                     </Field>
                     <Field label={t('outputFormat')}>
                       <select value={format} onChange={event => setFormat(event.target.value as Music3Request['output_format'])} className={CONTROL}>
+                        <option value="flac">FLAC</option>
                         <option value="mp3">MP3</option>
-                        <option value="wav16">WAV16</option>
-                        <option value="wav24">WAV24</option>
-                        <option value="wav32">WAV32</option>
                       </select>
                     </Field>
                   </div>
-                  <p className="mt-2 text-[11px] leading-4 text-zinc-500">{t('peakClipHint')}</p>
+                  <p className="mt-2 text-[11px] leading-4 text-zinc-500">{t('outputRawHint')}</p>
                   </Stage>
                 </div>
 

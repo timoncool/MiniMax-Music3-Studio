@@ -110,9 +110,7 @@ export interface Music3Request {
   /** Flow-matching variations per song, 1..9. */
   synth_batch_size: number;
   dit_cfg: number;
-  /** Percentile peak normalisation; 0 disables clipping. WAV32 ignores it. */
-  peak_clip: number;
-  output_format: 'mp3' | 'wav16' | 'wav24' | 'wav32';
+  output_format: 'flac' | 'mp3';
   mp3_bitrate: number;
   /** Library title only — never sent to the engine. */
   title?: string;

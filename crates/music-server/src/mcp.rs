@@ -1084,7 +1084,7 @@ fn tools() -> &'static [Tool] {
             },
             Tool {
                 name: "create_form_set",
-                description: "Fill the create page's form in the window, as if typed - the user sees every field change; fields not given stay. fields: title, caption (whole, split into its three parts) or global_metadata, vocal_details, arrangement, lyrics, instrumental, duration_seconds, steps, lm_seed, lm_cfg, lm_top_k, dit_cfg, synth_batch_size, seed, randomize_seed, audio_codes, cover_prompt, output_format, mp3_bitrate, peak_clip, adapters, mode (studio|simple). Use it when the user wants to see and adjust the song before it is made; song_create makes one directly.",
+                description: "Fill the create page's form in the window, as if typed - the user sees every field change; fields not given stay. fields: title, caption (whole, split into its three parts) or global_metadata, vocal_details, arrangement, lyrics, instrumental, duration_seconds, steps, lm_seed, lm_cfg, lm_top_k, dit_cfg, synth_batch_size, seed, randomize_seed, audio_codes, cover_prompt, output_format, mp3_bitrate, adapters, mode (studio|simple). Use it when the user wants to see and adjust the song before it is made; song_create makes one directly.",
                 schema: || object(json!({ "fields": { "type": "object", "description": "field -> value" } }), &["fields"]),
                 call: |args| window("create_set", args, 15),
             },
@@ -1372,10 +1372,9 @@ fn tools() -> &'static [Tool] {
                     "dit_cfg": { "type": "number" },
                     "lm_batch_size": { "type": "integer", "description": "compositions written from the request (1 by default)" },
                     "synth_batch_size": { "type": "integer", "description": "performances rendered of each composition (1 by default)" },
-                    "peak_clip": { "type": "integer", "description": "peak limiter, dB below full scale" },
                     "mp3_bitrate": { "type": "integer" },
                     "models": { "type": "object", "description": "the five model files for this song, names from engine_options_get / models_status: lm_model, depth_model, cond_model, dit_model, vae_model", "properties": { "lm_model": { "type": "string" }, "depth_model": { "type": "string" }, "cond_model": { "type": "string" }, "dit_model": { "type": "string" }, "vae_model": { "type": "string" } } },
-                    "output_format": { "type": "string", "enum": ["mp3", "wav16", "wav24", "wav32"] },
+                    "output_format": { "type": "string", "enum": ["flac", "mp3"], "description": "how the song is kept: lossless FLAC (default), or MP3 at mp3_bitrate" },
                     "cover_prompt": { "type": "string", "description": "what the cover should show; it is drawn only when an image model is set up (settings_get, covers), else the song has no cover" },
                     "adapters": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "string" }, "scales": { "type": "object", "description": "slot -> strength; left out, the LoRA's own strengths, else 1 on each slot it touches" } }, "required": ["id"] } }
                 }), &["caption", "lyrics", "duration_seconds"]),
@@ -1402,7 +1401,7 @@ fn tools() -> &'static [Tool] {
             Tool {
                 name: "song_replay",
                 description: "Render a library song again from its saved audio codes, bit for bit or with other steps, a new sound seed, another guidance or format - without composing again.",
-                schema: || object(json!({ "song_id": { "type": "string" }, "steps": { "type": "integer" }, "seed": { "type": "integer" }, "dit_cfg": { "type": "number" }, "output_format": { "type": "string" } }), &["song_id"]),
+                schema: || object(json!({ "song_id": { "type": "string" }, "steps": { "type": "integer" }, "seed": { "type": "integer" }, "dit_cfg": { "type": "number" }, "output_format": { "type": "string", "enum": ["flac", "mp3"] } }), &["song_id"]),
                 call: |args| post("/v1/music/replay".into(), args.clone()),
             },
             // ---------------------------------------------------------------- how to write for the model

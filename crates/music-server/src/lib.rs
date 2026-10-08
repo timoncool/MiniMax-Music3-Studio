@@ -168,7 +168,6 @@ struct CreateMusicJobRequest {
     lm_batch_size: Option<u32>,
     synth_batch_size: Option<u32>,
     dit_cfg: Option<f64>,
-    peak_clip: Option<i32>,
     output_format: Option<String>,
     mp3_bitrate: Option<u32>,
     models: Option<Mm3ModelSelection>,
@@ -1729,8 +1728,8 @@ async fn start_processing(
             })?;
             let folder = processing::workspace(&media);
             std::fs::create_dir_all(&folder)?;
-            let path = folder.join(format!("{id}-{}.wav", &run_id[run_id.len() - 8..]));
-            audio_pcm::write_wav24(&path, &audio)?;
+            let path = folder.join(format!("{id}-{}.flac", &run_id[run_id.len() - 8..]));
+            std::fs::write(&path, audio_post::encode::flac(&audio)?).with_context(|| format!("write {}", path.display()))?;
             Ok(path)
         })();
         handle.block_on(async {
@@ -1822,7 +1821,8 @@ async fn keep_processing(
         .as_deref()
         .and_then(|name| processing::workspace_file(&media, name))
         .ok_or_else(|| api_error(StatusCode::NOT_FOUND, "the preview file is gone".into()))?;
-    let filename = format!("{}-v{}-{}.wav", run.song_id, &uuid::Uuid::now_v7().simple().to_string()[..8], run.stages.join("-"));
+    let extension = preview.extension().and_then(|extension| extension.to_str()).unwrap_or("flac").to_owned();
+    let filename = format!("{}-v{}-{}.{extension}", run.song_id, &uuid::Uuid::now_v7().simple().to_string()[..8], run.stages.join("-"));
     let stored = media.join(&filename);
     std::fs::rename(&preview, &stored).map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, format!("store the version: {error}")))?;
     let reference_title = match &run.request.master {
@@ -1844,7 +1844,7 @@ async fn keep_processing(
             lyrics: original.lyrics.clone(),
             metadata: serde_json::json!({
                 "derived": derivation(&original, "processing", settings),
-                "duration_seconds": library::audio_duration_seconds(&audio, "wav", None),
+                "duration_seconds": library::audio_duration_seconds(&audio, &extension, None),
             }),
             generation_settings: Value::Null,
             engine_id: "processing".into(),
@@ -3236,7 +3236,7 @@ async fn tag_stored_song(state: &AppState, song_id: &str) {
     // `audio_path` is a full path, not a filename: resolve it the way playback
     // does, or tagging silently skips every track.
     let Some(audio_path) = state.library.media_path_for_song(&song) else { return };
-    if audio_path.extension().and_then(|value| value.to_str()).map(str::to_lowercase).as_deref() != Some("mp3") {
+    if !tagging::taggable(&audio_path) {
         return;
     }
     let cover_file = state.library.cover_path_for_song(&song).map(|(path, media_type)| (path, media_type.to_string()));
@@ -3254,7 +3254,7 @@ async fn tag_stored_song(state: &AppState, song_id: &str) {
     // reading the cover and rewriting the file are blocking file work
     let written = tokio::task::spawn_blocking(move || {
         let cover = cover_file.and_then(|(path, media_type)| std::fs::read(path).ok().map(|bytes| (media_type, bytes)));
-        tagging::write_mp3_tags(&audio_path, &tagging::TrackTags { cover, ..tags })
+        tagging::write_tags(&audio_path, &tagging::TrackTags { cover, ..tags })
     })
     .await;
     match written {
@@ -3264,11 +3264,10 @@ async fn tag_stored_song(state: &AppState, song_id: &str) {
     }
 }
 
-/// Tracks stored before the studio tagged anything carry no ID3, and a download
+/// Tracks stored before the studio tagged anything carry no tag, and a download
 /// of one lands in a player as an untitled file: each is tagged once, in the
 /// background, when the service starts. Serving a track never writes to it.
 async fn tag_untagged_songs(state: AppState) {
-    use tokio::io::AsyncReadExt;
     let songs = match state.library.list_songs() {
         Ok(songs) => songs,
         Err(error) => {
@@ -3278,15 +3277,11 @@ async fn tag_untagged_songs(state: AppState) {
     };
     for song in songs {
         let Some(path) = state.library.media_path_for_song(&song) else { continue };
-        if !path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case("mp3")) {
+        if !tagging::taggable(&path) {
             continue;
         }
-        // the check is the first three bytes, not the whole file
-        let mut head = [0u8; 3];
-        let untagged = match tokio::fs::File::open(&path).await {
-            Ok(mut file) => file.read_exact(&mut head).await.is_ok() && &head != b"ID3",
-            Err(_) => false,
-        };
+        // reads the tag, not the audio
+        let untagged = matches!(tokio::task::spawn_blocking(move || tagging::is_tagged(&path)).await, Ok(Ok(false)));
         if untagged {
             tag_stored_song(&state, &song.id).await;
         }
@@ -6857,7 +6852,7 @@ fn prepare_replay_synthesis(mut replay: Value, overrides: &ReplayMusicJobRequest
     if let Some(seed) = overrides.seed { object.insert("seed".into(), Value::from(seed)); }
     if let Some(dit_cfg) = overrides.dit_cfg { if !dit_cfg.is_finite() { return Err("dit_cfg must be finite".into()); } object.insert("dit_cfg".into(), Value::from(dit_cfg)); }
     if let Some(format) = &overrides.output_format {
-        if !matches!(format.as_str(), "mp3" | "wav16" | "wav24" | "wav32") { return Err("output_format must be mp3, wav16, wav24, or wav32".into()); }
+        validate_output_format(format)?;
         object.insert("output_format".into(), Value::String(format.clone()));
     }
     if let Some(models) = &overrides.models {
@@ -7157,30 +7152,37 @@ async fn import_completed_mm_result(state: &AppState, job: &MusicJob, job_id: &s
         let mut extension = mm_result::audio_extension(&track.audio_content_type)?;
         let mut audio = track.audio;
         let mut replay = replay;
-        if studio_encodes_mp3(&job.generation_settings) && extension == "wav" {
+        // the engine's float output is kept at the level it came: lossless FLAC unless MP3 was asked for
+        if extension == "wav" {
+            let format = output_format(&job.generation_settings).to_string();
             let kbps = job.generation_settings.get("mp3_bitrate").and_then(Value::as_u64).map_or(DEFAULT_MP3_KBPS, |value| value as u32);
-            let peak_clip = job.generation_settings.get("peak_clip").and_then(Value::as_u64).map_or(DEFAULT_PEAK_CLIP, |value| value as u32);
+            let target = format.clone();
             audio = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<u8>> {
-                let mut stereo = audio_pcm::decode_stereo_bytes(audio, "wav")?;
-                // a NaN would become the peak and turn the whole track into silence
+                let stereo = audio_pcm::decode_stereo_bytes(audio.clone(), "wav")?;
                 let broken = stereo.left.iter().chain(&stereo.right).filter(|sample| !sample.is_finite()).count();
                 if broken > 0 {
                     anyhow::bail!("the engine returned {broken} broken samples (NaN or infinity); make the song again");
                 }
-                audio_post::encode::normalize_peak(&mut stereo, peak_clip);
-                audio_post::encode::mp3(&stereo, kbps)
+                match target.as_str() {
+                    "mp3" => audio_post::encode::mp3(&stereo, kbps),
+                    "wav32" => Ok(audio),
+                    _ => audio_post::encode::flac(&stereo),
+                }
             })
             .await
-            .context("the MP3 encoder stopped")??;
-            extension = "mp3";
-            // the track says what it is: an MP3 at the rate LAME wrote
-            let written = Value::from(audio_post::encode::mp3_bitrate(kbps));
+            .context("the encoder stopped")??;
+            extension = match format.as_str() { "mp3" => "mp3", "wav32" => "wav", _ => "flac" };
             for record in [
                 generation_settings.as_object_mut().context("generation settings are not a JSON object")?,
                 replay.as_object_mut().context("the replay request is not a JSON object")?,
             ] {
-                record.insert("output_format".into(), Value::from("mp3"));
-                record.insert("mp3_bitrate".into(), written.clone());
+                record.insert("output_format".into(), Value::from(match format.as_str() { "mp3" => "mp3", "wav32" => "wav32", _ => "flac" }));
+                if format == "mp3" {
+                    // the track says what it is: an MP3 at the rate LAME wrote
+                    record.insert("mp3_bitrate".into(), Value::from(audio_post::encode::mp3_bitrate(kbps)));
+                } else {
+                    record.remove("mp3_bitrate");
+                }
             }
         }
         let metadata = serde_json::json!({
@@ -7420,25 +7422,29 @@ fn selected_local_music_engine(configuration: &StudioConfiguration) -> Option<St
 
 /// The bitrate a track is encoded at when the request names none.
 const DEFAULT_MP3_KBPS: u32 = 320;
-/// Samples per million allowed to clip when the level is set, as the engine does.
-const DEFAULT_PEAK_CLIP: u32 = 10;
 
-/// Whether the studio makes this track's MP3 itself; the engine's own default
-/// output is MP3, so a request naming no format counts.
-fn studio_encodes_mp3(settings: &Value) -> bool {
-    settings.get("output_format").and_then(Value::as_str).is_none_or(|format| format == "mp3")
+/// The format a track is kept in: what was asked for, else lossless FLAC.
+fn output_format(settings: &Value) -> &str {
+    settings.get("output_format").and_then(Value::as_str).unwrap_or("flac")
 }
 
-/// What the engine is asked for. An MP3 is made by the studio with LAME from
-/// the engine's unencoded 32-bit float output - the model's own rate and
-/// precision - so no track is ever encoded twice or by the engine's encoder.
+fn validate_output_format(format: &str) -> Result<(), String> {
+    if matches!(format, "flac" | "mp3" | "wav32") {
+        Ok(())
+    } else {
+        Err("output_format must be one of: flac, mp3, wav32".into())
+    }
+}
+
+/// What the engine is asked for: always its unencoded 32-bit float output, the
+/// model's own rate, precision and level, so a track is encoded once, here, and
+/// nothing changes its loudness on the way.
 fn engine_submission(body: &Value) -> Value {
     let mut engine = body.clone();
-    if studio_encodes_mp3(body) {
-        if let Some(fields) = engine.as_object_mut() {
-            fields.insert("output_format".into(), Value::from("wav32"));
-            fields.remove("mp3_bitrate");
-        }
+    if let Some(fields) = engine.as_object_mut() {
+        fields.insert("output_format".into(), Value::from("wav32"));
+        fields.remove("mp3_bitrate");
+        fields.remove("peak_clip");
     }
     engine
 }
@@ -7465,9 +7471,7 @@ fn mm_request_from(request: &CreateMusicJobRequest, selected_profile_id: Option<
         }
     }
     if let Some(output_format) = request.output_format.as_deref() {
-        if !matches!(output_format, "mp3" | "wav16" | "wav24" | "wav32") {
-            return Err("output_format must be one of: mp3, wav16, wav24, wav32".into());
-        }
+        validate_output_format(output_format)?;
     }
     let models = match request.models.clone() {
         Some(models) => {
@@ -7514,7 +7518,6 @@ fn mm_request_from(request: &CreateMusicJobRequest, selected_profile_id: Option<
     body["steps"] = Value::from(request.steps.unwrap_or(30));
     body["lm_batch_size"] = Value::from(request.lm_batch_size.unwrap_or(1));
     body["synth_batch_size"] = Value::from(request.synth_batch_size.unwrap_or(1));
-    body["peak_clip"] = Value::from(request.peak_clip.unwrap_or(10));
     body["mp3_bitrate"] = Value::from(request.mp3_bitrate.unwrap_or(DEFAULT_MP3_KBPS));
     insert_optional(&mut body, "seed", request.seed);
     insert_optional(&mut body, "lm_seed", request.lm_seed);
@@ -7753,14 +7756,16 @@ mod tests {
     }
 
     #[test]
-    fn the_engine_is_asked_for_float_when_the_studio_makes_the_mp3() {
-        let mp3 = serde_json::json!({ "caption": "x", "output_format": "mp3", "mp3_bitrate": 320 });
+    fn the_engine_is_always_asked_for_its_float_output() {
+        let mp3 = serde_json::json!({ "caption": "x", "output_format": "mp3", "mp3_bitrate": 320, "peak_clip": 10 });
         let sent = engine_submission(&mp3);
         assert_eq!(sent["output_format"], "wav32");
         assert!(sent.get("mp3_bitrate").is_none());
+        assert!(sent.get("peak_clip").is_none());
         assert_eq!(engine_submission(&serde_json::json!({ "caption": "x" }))["output_format"], "wav32");
-        let wav = serde_json::json!({ "caption": "x", "output_format": "wav24" });
-        assert_eq!(engine_submission(&wav), wav);
+        assert_eq!(engine_submission(&serde_json::json!({ "caption": "x", "output_format": "flac" }))["output_format"], "wav32");
+        assert_eq!(output_format(&serde_json::json!({ "caption": "x" })), "flac");
+        assert_eq!(output_format(&serde_json::json!({ "output_format": "mp3" })), "mp3");
     }
 
     /// Every file the editor page loads has to be embedded. The WaveSurfer
@@ -7838,8 +7843,7 @@ mod tests {
             lm_batch_size: Some(2),
             synth_batch_size: Some(3),
             dit_cfg: Some(1.7),
-            peak_clip: Some(10),
-            output_format: Some("wav24".into()),
+            output_format: Some("flac".into()),
             mp3_bitrate: Some(320),
             models: Some(Mm3ModelSelection {
                 lm_model: Some("lm.gguf".into()),
@@ -7853,10 +7857,9 @@ mod tests {
         .unwrap();
         assert_eq!(body["duration"], 30.0);
         assert_eq!(body["lm_model"], "lm.gguf");
-        assert_eq!(body["output_format"], "wav24");
+        assert_eq!(body["output_format"], "flac");
         assert_eq!(body["lm_batch_size"], 2);
         assert_eq!(body["synth_batch_size"], 3);
-        assert_eq!(body["peak_clip"], 10);
         assert_eq!(body["mp3_bitrate"], 320);
         assert!(body.get("reference_audio").is_none());
     }
@@ -7880,8 +7883,7 @@ mod tests {
             lm_batch_size: None,
             synth_batch_size: None,
             dit_cfg: Some(1.7),
-            peak_clip: None,
-            output_format: Some("flac".into()),
+            output_format: Some("wav24".into()),
             mp3_bitrate: None,
             models: Some(Mm3ModelSelection {
                 lm_model: Some("lm.gguf".into()),
@@ -7904,7 +7906,7 @@ mod tests {
             title: None,
             caption: "night drive".into(), lyrics: "[verse] one line".into(), duration_seconds: 60.0,
             steps: None, seed: None, lm_seed: None, lm_cfg: None, lm_top_k: None,
-            lm_batch_size: None, synth_batch_size: None, dit_cfg: None, peak_clip: None,
+            lm_batch_size: None, synth_batch_size: None, dit_cfg: None,
             output_format: None, mp3_bitrate: None,
             models: Some(Mm3ModelSelection { lm_model: Some("lm.gguf".into()), depth_model: Some("depth.gguf".into()), cond_model: Some("condition.gguf".into()), dit_model: Some("dit.gguf".into()), vae_model: Some("vocoder.gguf".into()) }),
         };
@@ -7912,7 +7914,6 @@ mod tests {
         assert_eq!(body["steps"], 30);
         assert_eq!(body["lm_batch_size"], 1);
         assert_eq!(body["synth_batch_size"], 1);
-        assert_eq!(body["peak_clip"], 10);
         assert_eq!(body["mp3_bitrate"], 320);
 
         let invalid = CreateMusicJobRequest { client_ref: None, synth_batch_size: Some(10), ..request };
@@ -7989,7 +7990,6 @@ mod tests {
                 lm_batch_size: None,
                 synth_batch_size: None,
                 dit_cfg: None,
-                peak_clip: None,
                 output_format: None,
                 mp3_bitrate: None,
                 models: None,
@@ -8014,14 +8014,14 @@ mod tests {
 
     #[test]
     fn replay_synthesis_keeps_audio_codes_and_only_applies_confirmed_synthesis_overrides() {
-        let request = ReplayMusicJobRequest { client_ref: None, song_id: None, replay_request: None, steps: Some(42), seed: Some(9), dit_cfg: Some(1.9), output_format: Some("wav24".into()), models: Some(Mm3ModelSelection { dit_model: Some("dit-q6.gguf".into()), ..Default::default() }) };
+        let request = ReplayMusicJobRequest { client_ref: None, song_id: None, replay_request: None, steps: Some(42), seed: Some(9), dit_cfg: Some(1.9), output_format: Some("mp3".into()), models: Some(Mm3ModelSelection { dit_model: Some("dit-q6.gguf".into()), ..Default::default() }) };
         let replay = serde_json::json!({"caption":"night drive","lyrics":"[verse] hi","audio_codes":"1,2,3,4,5,6,7,8","lm_seed":123,"lm_cfg":1.5,"dit_cfg":1.7,"steps":30,"seed":1,"dit_model":"dit-q4.gguf"});
         let prepared = prepare_replay_synthesis(replay, &request).unwrap();
         assert_eq!(prepared["audio_codes"], "1,2,3,4,5,6,7,8");
         assert_eq!(prepared["steps"], 42);
         assert_eq!(prepared["seed"], 9);
         assert_eq!(prepared["dit_cfg"], 1.9);
-        assert_eq!(prepared["output_format"], "wav24");
+        assert_eq!(prepared["output_format"], "mp3");
         assert_eq!(prepared["dit_model"], "dit-q6.gguf");
         assert_eq!(prepared["lm_seed"], 123);
     }
