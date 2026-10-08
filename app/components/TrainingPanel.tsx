@@ -1006,7 +1006,6 @@ const RunCard: React.FC<{ run: TrainingRun; onChanged: () => void; onError: (mes
               );
             })}
           </div>
-          <p className="mt-1.5 text-[11px] leading-4 text-zinc-500">{t('trainingCheckpointFiles')}</p>
         </div>
       )}
 
