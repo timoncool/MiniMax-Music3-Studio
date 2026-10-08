@@ -3,6 +3,42 @@
 What changed, newest first. Dates are release dates; the studio is versioned by its
 Windows build.
 
+## 2026-10-09 — 3.5.0
+
+### Added
+
+- **A note on every song, and its parameters** sent to the form, shown as JSON and saved to a
+  file, as in ACE-Step Studio; reusing a song opens the studio form, where its fields are.
+- **Engine progress on the card**: the stage, its step counter and the time left.
+- **Video export settings**: frame size from 1080p to 240p and AAC from 128 to 320 kbps.
+- **Parakeet Ultra int8** for karaoke: Moondream's fine-tune of Parakeet, quantized, a recogniser
+  of its own beside v3, which stays as it was.
+- The window keeps its size, place and maximised state; the player its repeat and shuffle.
+
+### Fixed
+
+- Audio to MIDI no longer needs CUDA 13: it runs on CUDA where the engine does and on the
+  processor elsewhere (Pascal, AMD, Intel); the new package is fetched once into a folder of its
+  own.
+- The MIDI editor keeps notes in place after an unknown meta event (files from Reaper).
+- The exported video's visualizer moves as in the player; its background no longer freezes on
+  zoom and pan.
+- Updating a LoRA from the catalogue left its old weights beside the new ones, and the engine
+  refused the pair.
+- Training shows the loss as loss.
+
+### Changed
+
+- **A song is kept as the model made it.** The engine hands over its float output and the
+  studio encodes it once, changing nothing on the way: lossless 24-bit FLAC by default, written
+  by libFLAC 1.5.0, the reference encoder; MP3 by LAME when chosen. Generation no longer
+  normalises the peak: Normalise is a stage under Process, after mastering. A float above full
+  scale is lowered into FLAC and MP3 as a whole rather than cut.
+- **Tags in every kept format** (lofty): title, artist, genre, tempo, lyrics and cover go into
+  a FLAC's Vorbis comments and picture block as into an MP3's ID3v2.4.
+- **Engine: minimaxmusic.cpp of 8 October** (ggml 0.26).
+- **Trainer: HOT-Step of 7 October**, about 14% faster per step with identical weights.
+
 ## 2026-10-01 — 3.4.0
 
 ### Added

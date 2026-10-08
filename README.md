@@ -62,8 +62,8 @@ Code, save [docs/mcp-skill.md](docs/mcp-skill.md) as `~/.claude/skills/minimax-m
 - **A proxy for the whole studio** — HTTP, HTTPS, SOCKS5 or SOCKS4, with a login: model
   downloads, Hugging Face, OpenRouter and updates go through it.
 - **Generate music locally** with the complete Music3 component set: caption, lyrics,
-  duration, DiT steps, LM CFG and top-k, DiT CFG, peak clip, separate DiT and LM seeds,
-  several songs per prompt and several variations per song, MP3 or 16/24/32-bit WAV.
+  duration, DiT steps, LM CFG and top-k, DiT CFG, separate DiT and LM seeds,
+  several songs per prompt and several variations per song, lossless FLAC or MP3.
 - **Reproduce any track exactly.** Every generation stores its request and its audio codes,
   so a track can be re-rendered deterministically, or re-rendered with different steps,
   seed or output format.
@@ -93,8 +93,8 @@ Code, save [docs/mcp-skill.md](docs/mcp-skill.md) as `~/.claude/skills/minimax-m
 - **Every result is a track** — stems, a processed take, a re-render and a cover land in
   the library as tracks of their own, each linked to the one it was made from and keeping
   the settings it was made with.
-- **Export files that carry their own data** — MP3s are written with ID3v2.4: title,
-  artist, album, genre, tempo, the lyrics and the cover art.
+- **Export files that carry their own data** — title, artist, album, genre, tempo, the
+  lyrics and the cover art go into a FLAC's Vorbis comments and an MP3's ID3v2.4.
 - **Choose your own quality/VRAM trade-off** in the model manager. Nothing downloads by
   itself.
 - **LoRA** — LoRA and LoKr for the language model (the composition) and for the DiT (the
@@ -131,15 +131,17 @@ Code, save [docs/mcp-skill.md](docs/mcp-skill.md) as `~/.claude/skills/minimax-m
 - **Audio processing** — noise reduction, the Spectral Lifter, a vocal naturaliser, your
   own VST3 plugins in a chain, and mastering to a reference track. Compare before and
   after while it plays, then keep the result as a version of the track or throw it away.
-- **MP3 made by the studio** — the engine renders 32-bit float and the studio encodes the
-  MP3 with LAME, so nothing is lost before the encoder.
+- **The sound as the model made it** — the engine renders 32-bit float and the studio encodes
+  it once, changing nothing on the way: lossless 24-bit FLAC by default (libFLAC, the reference
+  encoder), MP3 with LAME when you choose it. Normalisation is a stage under Process, after
+  mastering, never part of generation.
 - **Fewer steps, same sharpness** — below 30 DiT steps the engine raises the flow shift by
   itself (`29/(steps-1)`), so a fast render keeps its detail.
 - **A cover for every track** — a track without one wears a free (CC0) Wikimedia Commons
   photograph that fits the genres, moods and instruments of its style, a pattern in one of 21
   DiceBear styles, or a cover OpenRouter generates for every new track. It is chosen by the
-  track's seed, so it stays the same, a stem wears its song's, and it is written into the MP3,
-  so players show it after the download.
+  track's seed, so it stays the same, a stem wears its song's, and it is written into the
+  track's tags, so players show it after the download.
 - **One picture window** — for a cover, and for the background and centre of a music video:
   Commons photographs by search starting from the scenes a style calls up, clips free of
   copyright for a background, the track's pattern in any style, generation through
@@ -562,7 +564,7 @@ What changed and when is in [CHANGELOG.md](CHANGELOG.md).
   vocal naturalizer in [ComfyUI_MusicTools](https://github.com/jeankassio/ComfyUI_MusicTools).
 - [ntc-ai](https://huggingface.co/ntc-ai) for the sliders in the LoRA catalogue, each
   credited and linked on its card.
-- The [LAME](https://lame.sourceforge.io) project for the MP3 encoder.
+- The [LAME](https://lame.sourceforge.io) project for the MP3 encoder, [Xiph.Org](https://xiph.org/flac/) for libFLAC, the FLAC encoder, and [Serial-ATA](https://github.com/Serial-ATA/lofty-rs) for lofty, which writes the tags.
 - [crmne](https://github.com/crmne) for [Spotifast](https://github.com/crmne/spotifast) (MIT): the equalizer solves its band gains as its `eq.rs` does.
 - [Jordan Eldredge](https://github.com/captbaritone) and the Webamp team for [Webamp](https://github.com/captbaritone/webamp) (MIT), which the Winamp mode runs, and for the [Winamp Skin Museum](https://skins.webamp.org). Winamp and its base skin are Nullsoft's.
 - [Jordan Berg](https://github.com/jberg) for [Butterchurn](https://github.com/jberg/butterchurn) and [butterchurn-presets](https://github.com/jberg/butterchurn-presets) (MIT), MilkDrop in the browser. MilkDrop itself is Ryan Geiss's, and each preset is its author's, named in its title.
