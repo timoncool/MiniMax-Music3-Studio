@@ -388,6 +388,8 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
     if (settings.output_format === 'mp3' || settings.output_format === 'flac') setFormat(settings.output_format);
     // A song made without LoRA reuses without it, whatever was picked before.
     setAdapters(usesFromSettings(settings as Record<string, unknown>));
+    // the song's fields live on the studio form; the simple one would show none of them
+    setMode('studio');
   }, [initialData]);
 
   const reset = () => {
