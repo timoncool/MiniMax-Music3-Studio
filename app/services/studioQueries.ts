@@ -1,4 +1,5 @@
-import { QueryClient, useQuery } from '@tanstack/react-query';
+import { QueryClient, keepPreviousData, useQuery } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import type { Playlist, Song } from '../types';
 import { loadNativeLibrarySongs, loadNativePlaylists } from './nativeLibrary';
 
@@ -214,4 +215,57 @@ if (typeof window !== 'undefined') {
     window.clearTimeout(libraryBurst);
     libraryBurst = window.setTimeout(libraryChanged, 200);
   });
+}
+
+export interface PromptIssue {
+  code: 'words_on_tag_line' | 'vocal_gender_missing' | 'prompt_too_long';
+  severity: 'error' | 'warning';
+  line?: number;
+  text?: string;
+}
+
+export interface PromptCheck {
+  tokens: number;
+  /** False when the engine was not running and `tokens` is the service's estimate. */
+  exact: boolean;
+  limit: number;
+  issues: PromptIssue[];
+}
+
+/** What the engine would lose or refuse in a caption and lyrics, asked once typing pauses. */
+export function usePromptCheck(caption: string, lyrics: string, instrumental: boolean) {
+  const [asked, setAsked] = useState({ caption, lyrics, instrumental });
+  useEffect(() => {
+    const timer = window.setTimeout(() => setAsked({ caption, lyrics, instrumental }), 400);
+    return () => window.clearTimeout(timer);
+  }, [caption, lyrics, instrumental]);
+  return useQuery({
+    queryKey: ['prompt-check', asked],
+    queryFn: async () => {
+      const response = await fetch('/v1/music/prompt-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(asked),
+      });
+      if (!response.ok) throw new Error(`/v1/music/prompt-check answered ${response.status}`);
+      return (await response.json()) as PromptCheck;
+    },
+    placeholderData: keepPreviousData,
+    staleTime: Infinity,
+  });
+}
+
+const hubStateKey = ['hub-state'] as const;
+
+/** The hub notices that fit now and the telemetry choice; the service refreshes the feed itself every six hours. */
+export function useHubState(lang: string) {
+  return useQuery({
+    queryKey: [...hubStateKey, lang],
+    queryFn: () => readJson<import('./studioHub').HubState>(`/v1/hub/state?lang=${encodeURIComponent(lang)}`),
+    refetchInterval: 60_000,
+  });
+}
+
+export function hubStateChanged(): void {
+  void queryClient.invalidateQueries({ queryKey: hubStateKey });
 }

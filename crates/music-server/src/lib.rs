@@ -27,6 +27,7 @@ pub use remote::{set_asset_source, AssetSource};
 mod credentials;
 mod model_manager;
 mod presets;
+mod prompt_check;
 mod request_log;
 mod resources;
 mod chunked;
@@ -104,6 +105,8 @@ struct AppState {
     assistant_runtime: Arc<assistant_runtime::AssistantRuntime>,
     lyrics_sync: Arc<lyrics_sync::LyricsSync>,
     lyrics_sync_config: Arc<RwLock<lyrics_sync::LyricsSyncConfig>>,
+    /// Studio Hub: anonymous statistics and the news feed; None when its state file could not be read.
+    hub: Option<studio_hub_client::Hub>,
     /// Saved cover looks, filled in from whichever track a cover is for.
     cover_templates: Arc<RwLock<Vec<cover_prompt::CoverTemplate>>>,
     /// The look a new cover starts from, chosen in Settings.
@@ -149,7 +152,7 @@ struct MmServerClient {
     http: reqwest::Client,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct CreateMusicJobRequest {
     /// The window's own mark for this request, handed back on the job so the
     /// window knows the job as its own before the response reaches it.
@@ -168,7 +171,6 @@ struct CreateMusicJobRequest {
     lm_batch_size: Option<u32>,
     synth_batch_size: Option<u32>,
     dit_cfg: Option<f64>,
-    peak_clip: Option<i32>,
     output_format: Option<String>,
     mp3_bitrate: Option<u32>,
     models: Option<Mm3ModelSelection>,
@@ -185,7 +187,7 @@ struct CreateMusicJobRequest {
 
 /// One adapter of a request: its folder and a strength per engine slot. A slot
 /// left out is not changed.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 struct AdapterUse {
     id: String,
     #[serde(default)]
@@ -281,6 +283,130 @@ struct MusicJob {
     playlist_id: Option<String>,
 }
 
+fn job_status_name(status: &MusicJobStatus) -> &'static str {
+    match status {
+        MusicJobStatus::Queued => "queued",
+        MusicJobStatus::Running => "running",
+        MusicJobStatus::Completed => "completed",
+        MusicJobStatus::Failed => "failed",
+        MusicJobStatus::Cancelled => "cancelled",
+    }
+}
+
+fn stored_job(job: &MusicJob, request: Value, attempt: u32) -> library::StoredJob {
+    library::StoredJob {
+        id: job.id.clone(),
+        submitted_at: job.submitted_at,
+        engine_id: job.engine_id.clone(),
+        title: job.title.clone(),
+        caption: job.caption.clone(),
+        lyrics: job.lyrics.clone(),
+        duration_seconds: job.duration_seconds,
+        playlist_id: job.playlist_id.clone(),
+        generation_settings: job.generation_settings.clone(),
+        request,
+        status: job_status_name(&job.status).into(),
+        message: job.message.clone(),
+        attempt,
+        resumed_as: None,
+    }
+}
+
+fn job_from_stored(stored: library::StoredJob, status: MusicJobStatus, message: String) -> MusicJob {
+    let (dispatch, phase) = match status {
+        MusicJobStatus::Failed => (MusicJobDispatch::Local, MusicJobPhase::Failed),
+        _ => (MusicJobDispatch::Cancelled, MusicJobPhase::Cancelled),
+    };
+    MusicJob {
+        derived: None,
+        id: stored.id,
+        client_ref: None,
+        submitted_at: stored.submitted_at,
+        engine_id: stored.engine_id,
+        cover_prompt: None,
+        title: stored.title,
+        status,
+        dispatch,
+        phase,
+        caption: stored.caption,
+        lyrics: stored.lyrics,
+        duration_seconds: stored.duration_seconds,
+        generation_settings: stored.generation_settings,
+        song: None,
+        songs: vec![],
+        message,
+        playlist_id: stored.playlist_id,
+    }
+}
+
+/// How many times a song is started again after the studio closed on it; a
+/// request that takes the engine down every time must not start for ever.
+const MAX_RESUMES: u32 = 3;
+
+/// Songs the studio was closed on are started again, oldest first. The old
+/// job stays as `cancelled`, its message naming the job that took its place.
+async fn resume_unfinished_jobs(state: AppState) {
+    // the window lists only songs in flight, so what ended without a result in an earlier run is not kept
+    if let Err(error) = state.library.forget_ended_music_jobs() {
+        eprintln!("[ERROR] the songs that ended without a result could not be cleared: {error:#}");
+    }
+    let cut_off = match state.library.unfinished_music_jobs() {
+        Ok(jobs) if !jobs.is_empty() => jobs,
+        Ok(_) => return,
+        Err(error) => {
+            eprintln!("[ERROR] the songs cut off by the last run could not be read: {error:#}");
+            return;
+        }
+    };
+    // the engine is started with the service and takes a while to answer; if
+    // it never does, the songs stay as they are for the next start
+    let mut ready = false;
+    for _ in 0..90 {
+        if state.music_server.props().await.is_ok() {
+            ready = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
+    if !ready {
+        eprintln!("[ERROR] the engine did not answer; {} cut-off song(s) were not started again", cut_off.len());
+        return;
+    }
+    for old in cut_off {
+        let (resumed_as, message) = if old.attempt >= MAX_RESUMES {
+            (None, format!("Cut off when the studio closed, and already started again {MAX_RESUMES} times; make it again by hand."))
+        } else if let Some(replay) = old.request.get("replay") {
+            match serde_json::from_value::<ReplayMusicJobRequest>(replay.clone()) {
+                Err(error) => (None, format!("Cut off when the studio closed; its request could not be read to start it again: {error}")),
+                Ok(mut request) => {
+                    request.client_ref = None;
+                    match submit_replay_job(state.clone(), request, old.attempt + 1).await {
+                        Ok((_, Json(job))) => (Some(job.id.clone()), format!("Cut off when the studio closed; started again as {}.", job.id)),
+                        Err((_, Json(error))) => (None, format!("Cut off when the studio closed; it could not be started again: {}", error.error)),
+                    }
+                }
+            }
+        } else {
+            match serde_json::from_value::<CreateMusicJobRequest>(old.request.clone()) {
+                Err(error) => (None, format!("Cut off when the studio closed; its request could not be read to start it again: {error}")),
+                Ok(mut request) => {
+                    request.client_ref = None;
+                    let (status, Json(job)) = submit_music_job(state.clone(), request, old.attempt + 1).await;
+                    if status == StatusCode::ACCEPTED {
+                        (Some(job.id.clone()), format!("Cut off when the studio closed; started again as {}.", job.id))
+                    } else {
+                        (None, format!("Cut off when the studio closed; it could not be started again: {}", job.message))
+                    }
+                }
+            }
+        };
+        if let Err(error) = state.library.cancel_cut_off_music_job(&old.id, resumed_as.as_deref(), &message) {
+            eprintln!("[ERROR] a cut-off song could not be marked: {error:#}");
+        }
+        state.jobs.write().await.insert(old.id.clone(), job_from_stored(old, MusicJobStatus::Cancelled, message));
+    }
+}
+
 fn unix_millis() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |since| since.as_millis() as u64)
 }
@@ -347,7 +473,7 @@ struct ApplyPresetRequest {
     id: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct ReplayMusicJobRequest {
     song_id: Option<String>,
     replay_request: Option<Value>,
@@ -445,23 +571,41 @@ impl EngineOptions {
         if self.backend != ComputeBackend::Auto {
             return vec![self.backend];
         }
-        let mut chain = Vec::new();
-        if cuda_build::current().is_some() {
-            chain.push(ComputeBackend::Cuda);
+        // Off Windows the engine is a single native build whose ggml loads its
+        // own best device - Metal on Apple Silicon, Vulkan in the Linux
+        // package - so Auto asks the engine to choose (no GGML_BACKEND is set)
+        // and only falls back to the processor if that start fails.
+        #[cfg(not(windows))]
+        {
+            let mut chain = vec![ComputeBackend::Auto];
+            chain.retain(|device| !failed.contains(device));
+            chain.push(ComputeBackend::Cpu);
+            chain
         }
-        if !cuda_build::nvidia_card() {
-            chain.push(ComputeBackend::Vulkan);
+        #[cfg(windows)]
+        {
+            let mut chain = Vec::new();
+            if cuda_build::current().is_some() {
+                chain.push(ComputeBackend::Cuda);
+            }
+            if !cuda_build::nvidia_card() {
+                chain.push(ComputeBackend::Vulkan);
+            }
+            chain.retain(|device| !failed.contains(device));
+            chain.push(ComputeBackend::Cpu);
+            chain
         }
-        chain.retain(|device| !failed.contains(device));
-        chain.push(ComputeBackend::Cpu);
-        chain
     }
 
     /// The CUDA build the engine will compute on, and so the cuBLAS it needs:
     /// chosen outright, or left to ggml on an NVIDIA card one of the builds
-    /// runs on. None on Vulkan and the processor.
+    /// runs on. None on Vulkan and the processor, and off Windows, where the
+    /// engine is built without CUDA and NVIDIA's libraries are Windows ones.
     fn cuda_build(&self) -> Option<cuda_build::CudaBuild> {
         use music_engine::mm_server::ComputeBackend;
+        if !cfg!(windows) {
+            return None;
+        }
         match self.backend {
             ComputeBackend::Cuda | ComputeBackend::Auto => cuda_build::current(),
             ComputeBackend::Vulkan | ComputeBackend::Cpu => None,
@@ -599,17 +743,22 @@ pub async fn serve() -> anyhow::Result<()> {
     net::set(proxy);
     let bind_to = remote::start(persisted.as_ref().and_then(|settings| settings.network.clone()));
     let model_manager = ModelManager::from_environment()?;
-    let selected_component_ids = persisted
+    let persisted_components = persisted
         .as_ref()
         .and_then(|settings| settings.selected_component_ids.clone())
         .filter(|ids| model_manager.installed_component_files(ids).is_ok());
-    let selected_profile_id = if selected_component_ids.is_some() {
-        None
-    } else {
-        persisted
-            .as_ref()
-            .and_then(|settings| settings.selected_profile_id.clone())
-            .or_else(|| Some(presets::recommended_local_profile().into()))
+    let (selected_profile_id, selected_component_ids) = match persisted_components {
+        Some(ids) => match model_manager::profile_matching(&ids) {
+            Some(profile) => (Some(profile.to_owned()), None),
+            None => (None, Some(ids)),
+        },
+        None => (
+            persisted
+                .as_ref()
+                .and_then(|settings| settings.selected_profile_id.clone())
+                .or_else(|| Some(presets::recommended_local_profile().into())),
+            None,
+        ),
     };
     let music_server = MmServerClient::from_environment();
     let engine_log = engine_log::EngineLog::follow(music_server.http.clone(), music_server.url("/logs"));
@@ -684,10 +833,12 @@ pub async fn serve() -> anyhow::Result<()> {
         lyrics_sync_config: Arc::new(RwLock::new(
             persisted.as_ref().map(|settings| settings.lyrics_sync.clone()).unwrap_or_default(),
         )),
+        hub: start_hub(),
     };
     processing::clear_workspace(state.library.media_dir());
     state.training.recover();
     prepare::resume(&state);
+    tokio::spawn(resume_unfinished_jobs(state.clone()));
     {
         let state = state.clone();
         // both rewrite the tags of stored tracks, so one after the other
@@ -824,6 +975,7 @@ pub async fn serve() -> anyhow::Result<()> {
         .route("/v1/library/import", post(import_library_audio))
         .route("/v1/library/songs/{id}", get(library_song).put(update_library_song).delete(delete_library_song))
         .route("/v1/library/songs/{id}/liked", axum::routing::put(set_library_song_liked))
+        .route("/v1/library/songs/{id}/note", axum::routing::put(set_library_song_note))
         .route("/v1/library/liked", get(library_liked))
         .route("/v1/journal", get(read_journal).post(write_journal).delete(clear_journal))
         .route("/v1/journal/{id}", axum::routing::delete(remove_journal_entry))
@@ -849,10 +1001,12 @@ pub async fn serve() -> anyhow::Result<()> {
         .route("/v1/local-models/music", get(local_music_model_catalog))
         .route("/v1/music/jobs", post(create_music_job).get(list_active_music_jobs))
         .route("/v1/music/replay", post(replay_music_job))
+        .route("/v1/music/prompt-check", post(check_music_prompt))
         .route(
             "/v1/music/jobs/{job_id}",
             get(music_job_status).post(cancel_music_job),
         )
+        .merge(state.hub.as_ref().map(studio_hub_client::Hub::router).unwrap_or_default())
         .with_state(state.clone())
         // Covers and imported audio are megabytes, not kilobytes. The default
         // two-megabyte cap rejected a generated cover by dropping the
@@ -974,6 +1128,21 @@ async fn library_songs(State(state): State<AppState>) -> Result<Json<Vec<library
 #[derive(Deserialize)]
 struct LikeInput {
     liked: bool,
+}
+
+#[derive(Deserialize)]
+struct NoteInput {
+    note: String,
+}
+
+/// The person's own note on a song, kept with it.
+async fn set_library_song_note(State(state): State<AppState>, Path(id): Path<String>, Json(input): Json<NoteInput>) -> Result<Json<library::Song>, (StatusCode, Json<ApiError>)> {
+    state
+        .library
+        .set_song_note(&id, &input.note)
+        .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
+        .map(Json)
+        .ok_or_else(|| api_error(StatusCode::NOT_FOUND, "Song not found".into()))
 }
 
 /// The thumbs-up: set or take back, kept with the song.
@@ -1729,8 +1898,8 @@ async fn start_processing(
             })?;
             let folder = processing::workspace(&media);
             std::fs::create_dir_all(&folder)?;
-            let path = folder.join(format!("{id}-{}.wav", &run_id[run_id.len() - 8..]));
-            audio_pcm::write_wav24(&path, &audio)?;
+            let path = folder.join(format!("{id}-{}.flac", &run_id[run_id.len() - 8..]));
+            std::fs::write(&path, audio_post::encode::flac(&audio)?).with_context(|| format!("write {}", path.display()))?;
             Ok(path)
         })();
         handle.block_on(async {
@@ -1822,7 +1991,8 @@ async fn keep_processing(
         .as_deref()
         .and_then(|name| processing::workspace_file(&media, name))
         .ok_or_else(|| api_error(StatusCode::NOT_FOUND, "the preview file is gone".into()))?;
-    let filename = format!("{}-v{}-{}.wav", run.song_id, &uuid::Uuid::now_v7().simple().to_string()[..8], run.stages.join("-"));
+    let extension = preview.extension().and_then(|extension| extension.to_str()).unwrap_or("flac").to_owned();
+    let filename = format!("{}-v{}-{}.{extension}", run.song_id, &uuid::Uuid::now_v7().simple().to_string()[..8], run.stages.join("-"));
     let stored = media.join(&filename);
     std::fs::rename(&preview, &stored).map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, format!("store the version: {error}")))?;
     let reference_title = match &run.request.master {
@@ -1844,7 +2014,7 @@ async fn keep_processing(
             lyrics: original.lyrics.clone(),
             metadata: serde_json::json!({
                 "derived": derivation(&original, "processing", settings),
-                "duration_seconds": library::audio_duration_seconds(&audio, "wav", None),
+                "duration_seconds": library::audio_duration_seconds(&audio, &extension, None),
             }),
             generation_settings: Value::Null,
             engine_id: "processing".into(),
@@ -2837,7 +3007,7 @@ async fn read_activity(State(state): State<AppState>) -> Json<Value> {
 /// carries on.
 async fn ensure_local_recogniser(state: &AppState, config: &lyrics_sync::LyricsSyncConfig, song_id: &str) -> bool {
     let ready = |state: &AppState| match config.provider {
-        lyrics_sync::AsrProvider::Parakeet => state.lyrics_sync.parakeet_ready(),
+        lyrics_sync::AsrProvider::Parakeet => state.lyrics_sync.parakeet_ready(config.whisper_model.as_deref()),
         lyrics_sync::AsrProvider::Whisper => {
             state.lyrics_sync.whisper_binary().is_some() && state.lyrics_sync.whisper_model_ready(config)
         }
@@ -2848,7 +3018,8 @@ async fn ensure_local_recogniser(state: &AppState, config: &lyrics_sync::LyricsS
     }
 
     let missing: Vec<&'static lyrics_sync::Asset> = match config.provider {
-        lyrics_sync::AsrProvider::Parakeet => lyrics_sync::PARAKEET_ASSET_IDS
+        lyrics_sync::AsrProvider::Parakeet => lyrics_sync::parakeet_variant(config.whisper_model.as_deref())
+            .0
             .iter()
             .filter_map(|id| lyrics_sync::asset(id))
             .filter(|asset| !state.lyrics_sync.downloader().is_installed(asset))
@@ -2927,7 +3098,7 @@ async fn time_lyrics_for(state: AppState, song_id: String) {
         lyrics_sync::AsrProvider::Parakeet => {
             let sync = state.lyrics_sync.clone();
             let path = std::path::PathBuf::from(&audio);
-            match tokio::task::spawn_blocking(move || sync.parakeet_words(config.runtime, &path)).await {
+            match tokio::task::spawn_blocking(move || sync.parakeet_words(config.runtime, config.whisper_model.as_deref(), &path)).await {
                 Ok(result) => result,
                 Err(error) => {
                     eprintln!("no karaoke for {song_id}: {error}");
@@ -3236,7 +3407,7 @@ async fn tag_stored_song(state: &AppState, song_id: &str) {
     // `audio_path` is a full path, not a filename: resolve it the way playback
     // does, or tagging silently skips every track.
     let Some(audio_path) = state.library.media_path_for_song(&song) else { return };
-    if audio_path.extension().and_then(|value| value.to_str()).map(str::to_lowercase).as_deref() != Some("mp3") {
+    if !tagging::taggable(&audio_path) {
         return;
     }
     let cover_file = state.library.cover_path_for_song(&song).map(|(path, media_type)| (path, media_type.to_string()));
@@ -3254,7 +3425,7 @@ async fn tag_stored_song(state: &AppState, song_id: &str) {
     // reading the cover and rewriting the file are blocking file work
     let written = tokio::task::spawn_blocking(move || {
         let cover = cover_file.and_then(|(path, media_type)| std::fs::read(path).ok().map(|bytes| (media_type, bytes)));
-        tagging::write_mp3_tags(&audio_path, &tagging::TrackTags { cover, ..tags })
+        tagging::write_tags(&audio_path, &tagging::TrackTags { cover, ..tags })
     })
     .await;
     match written {
@@ -3264,11 +3435,10 @@ async fn tag_stored_song(state: &AppState, song_id: &str) {
     }
 }
 
-/// Tracks stored before the studio tagged anything carry no ID3, and a download
+/// Tracks stored before the studio tagged anything carry no tag, and a download
 /// of one lands in a player as an untitled file: each is tagged once, in the
 /// background, when the service starts. Serving a track never writes to it.
 async fn tag_untagged_songs(state: AppState) {
-    use tokio::io::AsyncReadExt;
     let songs = match state.library.list_songs() {
         Ok(songs) => songs,
         Err(error) => {
@@ -3278,15 +3448,11 @@ async fn tag_untagged_songs(state: AppState) {
     };
     for song in songs {
         let Some(path) = state.library.media_path_for_song(&song) else { continue };
-        if !path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case("mp3")) {
+        if !tagging::taggable(&path) {
             continue;
         }
-        // the check is the first three bytes, not the whole file
-        let mut head = [0u8; 3];
-        let untagged = match tokio::fs::File::open(&path).await {
-            Ok(mut file) => file.read_exact(&mut head).await.is_ok() && &head != b"ID3",
-            Err(_) => false,
-        };
+        // reads the tag, not the audio
+        let untagged = matches!(tokio::task::spawn_blocking(move || tagging::is_tagged(&path)).await, Ok(Ok(false)));
         if untagged {
             tag_stored_song(&state, &song.id).await;
         }
@@ -3801,16 +3967,21 @@ async fn update_configuration(
         match selection.capability {
             Capability::SpeechToText => {
                 let mut sync = state.lyrics_sync_config.write().await;
+                let installed_parakeet = state.lyrics_sync.installed_parakeet();
                 sync.provider = match selection.mode {
                     ExecutionMode::OpenRouter => lyrics_sync::AsrProvider::OpenRouter,
                     ExecutionMode::Local => match selection.local_engine.as_deref() {
                         Some("whisper") => lyrics_sync::AsrProvider::Whisper,
                         Some("parakeet") => lyrics_sync::AsrProvider::Parakeet,
-                        _ if state.lyrics_sync.parakeet_ready() => lyrics_sync::AsrProvider::Parakeet,
+                        _ if installed_parakeet.is_some() => lyrics_sync::AsrProvider::Parakeet,
                         _ if state.lyrics_sync.whisper_binary().is_some() => lyrics_sync::AsrProvider::Whisper,
                         _ => sync.provider,
                     },
                 };
+                // picked because some Parakeet is there: the one named must be that one
+                if sync.provider == lyrics_sync::AsrProvider::Parakeet && selection.local_engine.is_none() && !state.lyrics_sync.parakeet_ready(sync.whisper_model.as_deref()) {
+                    sync.whisper_model = installed_parakeet.map(String::from);
+                }
                 if selection.mode == ExecutionMode::OpenRouter {
                     sync.openrouter_model = selection.cloud_model.clone();
                 }
@@ -4099,7 +4270,19 @@ fn engine_bundle_root() -> PathBuf {
     env::var_os("MINIMAX_MM_SERVER_ROOT")
         .map(PathBuf::from)
         .or_else(|| env::var_os("MINIMAX_MM_SERVER_BIN").map(PathBuf::from).and_then(|path| path.parent().map(std::path::Path::to_path_buf)))
-        .or_else(|| std::env::current_exe().ok().and_then(|path| path.parent().map(|parent| parent.join("resources").join("minimaxmusic-cpp"))))
+        .or_else(|| std::env::current_exe().ok().and_then(|path| path.parent().map(|parent| parent.join("resources").join("minimaxmusic-cpp"))).map(|beside| {
+            // In a macOS app bundle the executable is Contents/MacOS/<name> and
+            // bundled resources are in Contents/Resources.
+            let in_bundle = beside.ancestors().nth(3).map(|contents| contents.join("Resources").join("resources").join("minimaxmusic-cpp"));
+            // A Linux package puts the executable in usr/bin and the resources
+            // in usr/lib/<product name>, the AppImage under its own usr.
+            let in_package = beside.ancestors().nth(3).map(|usr| usr.join("lib").join("MiniMax Music3 Studio").join("resources").join("minimaxmusic-cpp"));
+            match (in_bundle, in_package) {
+                (Some(path), _) if cfg!(target_os = "macos") && path.is_dir() => path,
+                (_, Some(path)) if cfg!(target_os = "linux") && !beside.is_dir() && path.is_dir() => path,
+                _ => beside,
+            }
+        }))
         .unwrap_or_else(|| PathBuf::from("resources/minimaxmusic-cpp"))
 }
 
@@ -4464,6 +4647,65 @@ pub fn set_studio_version(version: String) {
 
 pub(crate) fn studio_version() -> &'static str {
     STUDIO_VERSION.get().map(String::as_str).unwrap_or(env!("CARGO_PKG_VERSION"))
+}
+
+/// Studio Hub for this studio: statistics only after the start screen showed its checkbox, news through the
+/// studio's own proxy setting. A state file that cannot be read leaves the studio without it, said once.
+fn start_hub() -> Option<studio_hub_client::Hub> {
+    let machine = presets::hardware();
+    let name = machine.gpu_name.to_ascii_lowercase();
+    let vendor = if !machine.has_gpu || name.is_empty() {
+        "none"
+    } else if name.contains("nvidia") || name.contains("geforce") || name.contains("rtx") || name.contains("quadro") {
+        "nvidia"
+    } else if name.contains("amd") || name.contains("radeon") {
+        "amd"
+    } else if name.contains("intel") {
+        "intel"
+    } else if name.contains("apple") {
+        "apple"
+    } else {
+        "other"
+    };
+    let backend = if cfg!(windows) && cuda_build::current().is_some() {
+        "cuda"
+    } else if cfg!(target_os = "macos") {
+        "metal"
+    } else if vendor == "none" {
+        "cpu"
+    } else {
+        "vulkan"
+    };
+    let os_label = format!(
+        "{} {}",
+        sysinfo::System::name().unwrap_or_else(|| std::env::consts::OS.to_string()),
+        sysinfo::System::os_version().unwrap_or_default()
+    )
+    .to_ascii_lowercase();
+    let config = studio_hub_client::HubConfig {
+        app: "minimax".into(),
+        version: studio_version().to_string(),
+        data_dir: studio_data_root().unwrap_or_else(|| PathBuf::from(".")),
+        http: net::client(),
+        os_label,
+        gpu: studio_hub_client::Gpu {
+            vendor: vendor.into(),
+            vram_gb: studio_hub_client::Gpu::vram_bucket((machine.total_vram_gb * 1_073_741_824.0) as u64),
+            backend: backend.into(),
+        },
+        ui_lang: "en".into(),
+        urls: Vec::new(),
+    };
+    match studio_hub_client::Hub::new(config) {
+        Ok(hub) => {
+            hub.spawn();
+            Some(hub)
+        }
+        Err(error) => {
+            eprintln!("[ERROR] Studio Hub is off for this run, its state file cannot be read: {error}");
+            None
+        }
+    }
 }
 
 pub fn studio_data_root() -> Option<PathBuf> {
@@ -5045,10 +5287,38 @@ async fn karaoke_status(State(state): State<AppState>) -> Json<Value> {
     };
     let set = karaoke_set(name, config.runtime, config.whisper_model.as_deref());
     let mut value = serde_json::to_value(&status).unwrap_or(Value::Null);
+    if let Some(assets) = value.get_mut("assets").and_then(Value::as_array_mut) {
+        for asset in assets {
+            if let Some(bytes) = asset["id"].as_str().and_then(karaoke_variant_bytes) {
+                asset["variant_bytes"] = Value::from(bytes);
+            }
+        }
+    }
     if let Value::Object(ref mut fields) = value {
-        fields.insert("set".into(), set_progress(state.lyrics_sync.downloader(), &set));
+        let mut progress = set_progress(state.lyrics_sync.downloader(), &set);
+        // the chosen model's files are part of this set, so the window adds nothing to it
+        progress["with_model"] = Value::Bool(true);
+        fields.insert("set".into(), progress);
     }
     Json(value)
+}
+
+/// What choosing this recogniser model downloads: its own file and the ones that come with it
+/// (a Parakeet encoder's decoder, vocabulary and, for fp32, its weights; a Whisper model's folder).
+fn karaoke_variant_bytes(id: &str) -> Option<u64> {
+    let files: Vec<&'static lyrics_sync::Asset> = if id.starts_with("parakeet-") {
+        let (ids, _) = lyrics_sync::parakeet_variant(Some(id));
+        if !ids.first().is_some_and(|first| *first == id) {
+            return None;
+        }
+        ids.iter().filter_map(|id| lyrics_sync::asset(id)).collect()
+    } else if let Some(size) = id.strip_prefix("whisper-").filter(|_| lyrics_sync::asset(id).is_some_and(|asset| asset.vram_gb.is_some())) {
+        let prefix = format!("models/whisper/faster-whisper-{size}/");
+        lyrics_sync::ASSETS.iter().filter(|asset| asset.relative_path.starts_with(&prefix)).collect()
+    } else {
+        return None;
+    };
+    Some(files.iter().map(|asset| asset.bytes).sum())
 }
 
 /// Every field optional, so a panel that changes one thing changes one thing.
@@ -5129,12 +5399,8 @@ fn karaoke_set(name: &str, device: lyrics_sync::OnnxFlavour, whisper_model: Opti
             wanted.push("onnxruntime".into());
             wanted.extend(card_assets(device).iter().map(|id| id.to_string()));
             // The precision is chosen the same way a Whisper model is: through
-            // the dropdown, which names one of the two encoders.
-            if whisper_model.is_some_and(|id| id.contains("fp32")) {
-                wanted.extend(lyrics_sync::PARAKEET_FP32_ASSET_IDS.map(String::from));
-            } else {
-                wanted.extend(lyrics_sync::PARAKEET_ASSET_IDS.map(String::from));
-            }
+            // the dropdown, which names one of the encoders.
+            wanted.extend(lyrics_sync::parakeet_variant(whisper_model).0.iter().map(|id| id.to_string()));
         }
         "whisper" => {
             // One binary whichever device is chosen; the card needs CUDA 11's
@@ -5239,7 +5505,7 @@ async fn create_song_karaoke(
         lyrics_sync::AsrProvider::Parakeet => {
             let sync = state.lyrics_sync.clone();
             let path = std::path::PathBuf::from(&audio);
-            tokio::task::spawn_blocking(move || sync.parakeet_words(config.runtime, &path))
+            tokio::task::spawn_blocking(move || sync.parakeet_words(config.runtime, config.whisper_model.as_deref(), &path))
                 .await
                 .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
         }
@@ -5904,8 +6170,10 @@ async fn install_midi(State(state): State<AppState>, Json(input): Json<MidiSizeR
     }
     let transcriber = state.midi.clone();
     tokio::spawn(async move {
-        if let Err(error) = transcriber.downloader().install_all("midi", &missing).await {
-            eprintln!("[ERROR] midi: download failed: {error:#}");
+        match transcriber.downloader().install_all("midi", &missing).await {
+            Ok(_) if transcriber.tool_installed() => transcriber.remove_older_tools(),
+            Ok(_) => {}
+            Err(error) => eprintln!("[ERROR] midi: download failed: {error:#}"),
         }
     });
     Ok(Json(serde_json::json!({ "started": true, "size": size.id })))
@@ -5997,6 +6265,21 @@ fn midi_stopped(state: &AppState) -> bool {
     state.midi_stop.0.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// The device the transcriber computes on, as its `--device` names it: left to it (CUDA) where
+/// the engine runs the CUDA 13 build, else the processor - Pascal and Maxwell have no CUDA 13 code,
+/// AMD and Intel no CUDA, and its Vulkan path writes wrong notes.
+fn midi_device(options: &EngineOptions) -> &'static str {
+    // the macOS build carries Metal alone, which its own choice finds
+    if cfg!(target_os = "macos") {
+        return if options.backend == music_engine::mm_server::ComputeBackend::Cpu { "cpu" } else { "auto" };
+    }
+    match options.backend {
+        music_engine::mm_server::ComputeBackend::Cpu => "cpu",
+        _ if options.cuda_build() == Some(cuda_build::CudaBuild::Cuda13) => "auto",
+        _ => "cpu",
+    }
+}
+
 /// Fetches what is missing, reads the audio as the transcriber wants it and
 /// runs it, following its notes as they come. Returns how many it heard.
 async fn transcribe_to_midi(state: &AppState, size: &'static midi::Size, audio: &std::path::Path, output: &std::path::Path) -> anyhow::Result<usize> {
@@ -6009,6 +6292,7 @@ async fn transcribe_to_midi(state: &AppState, size: &'static midi::Size, audio: 
         if midi_stopped(state) || !state.midi.missing(size).is_empty() {
             anyhow::bail!("stopped before everything the transcriber needs had arrived");
         }
+        state.midi.remove_older_tools();
     }
 
     // WAV and MP3 go to the transcriber as they are: its own decoder is the
@@ -6038,8 +6322,14 @@ async fn transcribe_to_midi(state: &AppState, size: &'static midi::Size, audio: 
         std::fs::create_dir_all(folder).with_context(|| format!("create {}", folder.display()))?;
     }
     let tool = state.midi.tool();
+    if !tool.is_file() {
+        anyhow::bail!("the Audio to MIDI transcriber is not part of this build ({}): it ships for Windows and macOS", tool.display());
+    }
+    let device = midi_device(&*state.engine_options.read().await);
     let mut command = tokio::process::Command::new(&tool);
     command
+        .arg("--device")
+        .arg(device)
         .arg("--model")
         .arg(state.midi.model_dir(size))
         .arg(if raw.is_some() { "--transcribe-raw" } else { "--transcribe" })
@@ -6052,12 +6342,11 @@ async fn transcribe_to_midi(state: &AppState, size: &'static midi::Size, audio: 
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
     // the CUDA runtime it imports lives beside the engine, as for the trainer
-    let mut path = std::ffi::OsString::from(engine_bundle_root().as_os_str());
-    if let Some(existing) = std::env::var_os("PATH") {
-        path.push(";");
-        path.push(existing);
+    let mut paths = vec![engine_bundle_root()];
+    paths.extend(std::env::var_os("PATH").iter().flat_map(std::env::split_paths));
+    if let Ok(path) = std::env::join_paths(paths) {
+        command.env("PATH", path);
     }
-    command.env("PATH", path);
     #[cfg(windows)]
     command.creation_flags(0x0800_0000);
     let mut child = command.spawn().with_context(|| format!("start {}", tool.display()))?;
@@ -6120,12 +6409,12 @@ async fn transcribe_to_midi(state: &AppState, size: &'static midi::Size, audio: 
     }
     if !status.success() || !events.finished {
         let _ = std::fs::remove_file(&partial);
-        // Windows' "a DLL was not found": the CUDA 13 runtime it imports
-        if status.code() == Some(-1073741515) {
-            anyhow::bail!("the transcriber could not load the CUDA 13 libraries it needs: it runs on an NVIDIA card from the GTX 16 and RTX 20 series on with driver 580 or newer, once the music engine has started on it and fetched them");
-        }
         let said = said.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).iter().cloned().collect::<Vec<_>>().join("\n");
-        anyhow::bail!("the transcriber stopped with {status}: {said}");
+        // Windows' "a DLL was not found": a transcriber from before its backends were libraries
+        if status.code() == Some(-1073741515) {
+            anyhow::bail!("the transcriber could not load a library it needs; remove Audio to MIDI in Settings - Models and download it again: {said}");
+        }
+        anyhow::bail!("the transcriber stopped with {status} on {device}: {said}");
     }
     std::fs::rename(&partial, output).with_context(|| format!("keep {}", output.display()))?;
     let sidecar = midi::Sidecar { size: size.id.to_string(), made_at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|since| since.as_secs().to_string()).unwrap_or_default(), instruments: events.instruments(), notes: events.notes.clone() };
@@ -6516,7 +6805,7 @@ async fn persist_completed_download_profile(state: AppState, job_id: String) {
         let Some(job) = state.model_manager.download_job(&job_id).await else { return; };
         match job.status {
             model_manager::DownloadStatus::Completed => {
-                if let Some(profile_id) = job.profile_id {
+                if let Some(profile_id) = job.profile_id.or_else(|| model_manager::profile_matching(&job.component_ids).map(str::to_owned)) {
                     *state.selected_profile_id.write().await = Some(profile_id);
                     *state.selected_component_ids.write().await = None;
                 } else if state.model_manager.installed_component_files(&job.component_ids).is_ok() {
@@ -6542,7 +6831,8 @@ async fn setup_select(
     State(state): State<AppState>,
     Json(request): Json<SetupSelectRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<ApiError>)> {
-    if let Some(profile_id) = request.profile_id.clone().filter(|value| !value.trim().is_empty()) {
+    let matched = request.component_ids.as_deref().and_then(model_manager::profile_matching).map(str::to_owned);
+    if let Some(profile_id) = request.profile_id.clone().filter(|value| !value.trim().is_empty()).or(matched) {
         let known = state.model_manager.catalog().profiles.iter().any(|profile| profile.id == profile_id);
         if !known {
             return Err(api_error(StatusCode::BAD_REQUEST, format!("unknown profile {profile_id}")));
@@ -6579,7 +6869,7 @@ async fn setup_cancel(State(state): State<AppState>) -> Result<Json<Value>, (Sta
 
 async fn capabilities(State(state): State<AppState>) -> Json<CapabilitiesResponse> {
     let primary_installed = state.music_server.health().await;
-    let parakeet_installed = state.lyrics_sync.parakeet_ready();
+    let parakeet_installed = state.lyrics_sync.parakeet_any_ready();
     let whisper_installed = state.lyrics_sync.whisper_binary().is_some();
     let assistant = state.assistant.read().await.clone();
     let assistant_installed = assistant.available();
@@ -6679,6 +6969,18 @@ fn engine_failure_reason() -> Option<String> {
         .then(|| "The graphics card ran out of memory while the engine was loading the models. Choose a smaller quantisation in the model manager, or close whatever else is using the card - the writing assistant holds several gigabytes of its own.".to_string())
 }
 
+/// Why the engine gave this job up: running out of memory, else its own last
+/// FATAL line after the job's start.
+fn job_failure_reason(state: &AppState, job_id: &str) -> Option<String> {
+    engine_failure_reason().or_else(|| last_fatal(&state.engine_log.lines()?, job_id))
+}
+
+fn last_fatal(lines: &[String], job_id: &str) -> Option<String> {
+    let start = format!("Job {job_id}");
+    let from = lines.iter().rposition(|line| line.contains(&start))?;
+    lines[from..].iter().rev().find_map(|line| line.split_once("FATAL:").map(|(_, why)| why.trim().to_string())).filter(|why| !why.is_empty())
+}
+
 /// Whether a lowercased log says the card ran out of room.
 fn describes_exhausted_memory(log: &str) -> bool {
     [
@@ -6695,8 +6997,14 @@ fn describes_exhausted_memory(log: &str) -> bool {
 
 async fn create_music_job(
     State(state): State<AppState>,
-    Json(mut request): Json<CreateMusicJobRequest>,
+    Json(request): Json<CreateMusicJobRequest>,
 ) -> (StatusCode, Json<MusicJob>) {
+    submit_music_job(state, request, 0).await
+}
+
+/// Sends a request to the engine and keeps it; `attempt` counts the times it
+/// was started again after the studio closed on it.
+async fn submit_music_job(state: AppState, mut request: CreateMusicJobRequest, attempt: u32) -> (StatusCode, Json<MusicJob>) {
     let music_selection = state.configuration.read().await.selections.iter().find(|selection| selection.capability == Capability::MusicGeneration).cloned();
     if music_selection.as_ref().is_some_and(|selection| selection.mode == ExecutionMode::OpenRouter) {
         return create_openrouter_music_job(state, request, music_selection.and_then(|selection| selection.cloud_model)).await;
@@ -6723,7 +7031,17 @@ async fn create_music_job(
         Ok(value) => value,
         Err(error) => return (StatusCode::BAD_REQUEST, Json(failed_request_job(request, engine_id, error))),
     };
+    let stored_request = serde_json::to_value(&request).unwrap_or(Value::Null);
     let _using = state.engine_use.read().await;
+    let text = |field: &str| mm_request.get(field).and_then(Value::as_str).unwrap_or_default().to_owned();
+    match state.music_server.tokenize(&text("caption"), &text("lyrics")).await {
+        Ok(tokens) if tokens > prompt_check::MAX_PROMPT_TOKENS => {
+            return (StatusCode::BAD_REQUEST, Json(failed_request_job(request, engine_id, prompt_check::too_long_message(tokens))));
+        }
+        Ok(_) => {}
+        // the engine enforces the same budget at submit; only the friendlier message is lost
+        Err(error) => eprintln!("[ERROR] the prompt length was not counted before submitting: {error:#}"),
+    }
     match state.music_server.submit(engine_submission(&mm_request)).await {
         Ok(remote) => {
             let job = MusicJob {
@@ -6747,6 +7065,10 @@ async fn create_music_job(
                 playlist_id: request.playlist_id.clone(),
             };
             state.jobs.write().await.insert(job.id.clone(), job.clone());
+            // kept at once, so a song the studio is closed on is not lost
+            if let Err(error) = state.library.save_music_job(&stored_job(&job, stored_request, attempt)) {
+                eprintln!("[ERROR] the song's request could not be kept: {error:#}");
+            }
             spawn_job_watcher(state.clone(), job.id.clone());
             (StatusCode::ACCEPTED, Json(job))
         }
@@ -6779,10 +7101,44 @@ async fn list_active_music_jobs(State(state): State<AppState>) -> Json<Vec<Music
     Json(active)
 }
 
+#[derive(Debug, Deserialize)]
+struct PromptCheckRequest {
+    #[serde(default)]
+    caption: String,
+    #[serde(default)]
+    lyrics: String,
+    #[serde(default)]
+    instrumental: bool,
+}
+
+/// What the engine would do with a caption and lyrics before it is asked to sing them: the
+/// lyrics lines whose words it drops, a song that never names its singer's gender, and the
+/// prompt against the 5000-token budget. A running engine counts the tokens itself; without
+/// one the count is an estimate and says so.
+async fn check_music_prompt(State(state): State<AppState>, Json(request): Json<PromptCheckRequest>) -> Result<Json<Value>, (StatusCode, Json<ApiError>)> {
+    let (tokens, exact) = if state.music_server.health().await {
+        let counted = state
+            .music_server
+            .tokenize(&request.caption, &request.lyrics)
+            .await
+            .map_err(|error| api_error(StatusCode::BAD_GATEWAY, error.to_string()))?;
+        (counted, true)
+    } else {
+        (prompt_check::estimate_tokens(&request.caption, &request.lyrics), false)
+    };
+    let found = prompt_check::check(&request.caption, &request.lyrics, request.instrumental, tokens, exact);
+    Ok(Json(serde_json::to_value(found).map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?))
+}
+
 async fn replay_music_job(
     State(state): State<AppState>,
     Json(request): Json<ReplayMusicJobRequest>,
 ) -> Result<(StatusCode, Json<MusicJob>), (StatusCode, Json<ApiError>)> {
+    submit_replay_job(state, request, 0).await
+}
+
+/// Sends a re-render to the engine and keeps it, as a new song is kept.
+async fn submit_replay_job(state: AppState, request: ReplayMusicJobRequest, attempt: u32) -> Result<(StatusCode, Json<MusicJob>), (StatusCode, Json<ApiError>)> {
     if selected_local_music_engine(&*state.configuration.read().await).as_deref() != Some(PRIMARY_MUSIC_ENGINE_ID) {
         return Err(api_error(StatusCode::CONFLICT, "Replay synthesis requires the local minimaxmusic-cpp engine.".into()));
     }
@@ -6824,6 +7180,10 @@ async fn replay_music_job(
         }
     }
     state.jobs.write().await.insert(job.id.clone(), job.clone());
+    let stored_request = serde_json::json!({ "replay": serde_json::to_value(&request).unwrap_or(Value::Null) });
+    if let Err(error) = state.library.save_music_job(&stored_job(&job, stored_request, attempt)) {
+        eprintln!("[ERROR] the re-render's request could not be kept: {error:#}");
+    }
     spawn_job_watcher(state.clone(), job.id.clone());
     Ok((StatusCode::ACCEPTED, Json(job)))
 }
@@ -6840,7 +7200,7 @@ fn prepare_replay_synthesis(mut replay: Value, overrides: &ReplayMusicJobRequest
     if let Some(seed) = overrides.seed { object.insert("seed".into(), Value::from(seed)); }
     if let Some(dit_cfg) = overrides.dit_cfg { if !dit_cfg.is_finite() { return Err("dit_cfg must be finite".into()); } object.insert("dit_cfg".into(), Value::from(dit_cfg)); }
     if let Some(format) = &overrides.output_format {
-        if !matches!(format.as_str(), "mp3" | "wav16" | "wav24" | "wav32") { return Err("output_format must be mp3, wav16, wav24, or wav32".into()); }
+        validate_output_format(format)?;
         object.insert("output_format".into(), Value::String(format.clone()));
     }
     if let Some(models) = &overrides.models {
@@ -7043,6 +7403,38 @@ fn add_to_playlist(library: &library::Library, playlist_id: &str, songs: impl It
 /// in the library.
 fn spawn_job_watcher(state: AppState, job_id: String) {
     tokio::spawn(async move {
+        follow_job(&state, &job_id).await;
+        // however it ended, it is no longer one the studio's closing could cut off
+        let ended = state.jobs.read().await.get(&job_id).map(|job| {
+            let profiles: Vec<String> = job.songs.iter().filter_map(|made| made.song.profile_id.clone()).collect();
+            (job_status_name(&job.status), job.message.clone(), job.songs.len(), profiles)
+        });
+        if let Some(hub) = &state.hub {
+            match ended.as_ref().map(|(status, _, songs, profiles)| (*status, *songs, profiles)) {
+                Some(("completed", songs, profiles)) if songs > 0 => {
+                    hub.count("songs", songs as u64);
+                    for profile in profiles {
+                        hub.used_model(profile);
+                    }
+                }
+                Some(("failed", _, _)) => hub.count("song_failed", 1),
+                Some(("cancelled", _, _)) => hub.count("song_cancelled", 1),
+                _ => {}
+            }
+        }
+        if let Some((status, message, _, _)) = ended {
+            // a song that reached the library needs no record of its request any more
+            let kept = if status == "completed" { state.library.forget_music_job(&job_id) } else { state.library.set_music_job_status(&job_id, status, &message) };
+            if let Err(error) = kept {
+                eprintln!("[ERROR] the song's state could not be kept: {error:#}");
+            }
+        }
+    });
+}
+
+async fn follow_job(state: &AppState, job_id: &str) {
+    let job_id = job_id.to_owned();
+    {
         let mut unreachable = 0u32;
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
@@ -7099,11 +7491,12 @@ fn spawn_job_watcher(state: AppState, job_id: String) {
                 }
                 return;
             }
+            let failure = (remote.status == "failed").then(|| job_failure_reason(&state, &job_id)).flatten();
             if let Some(job) = state.jobs.write().await.get_mut(&job_id) {
-                apply_remote_status(job, &remote.status);
+                apply_remote_status(job, &remote.status, failure);
             }
         }
-    });
+    }
 }
 
 async fn import_completed_mm_result(state: &AppState, job: &MusicJob, job_id: &str) -> anyhow::Result<Vec<CompletedSong>> {
@@ -7139,31 +7532,49 @@ async fn import_completed_mm_result(state: &AppState, job: &MusicJob, job_id: &s
         // Take the length from the job that was actually submitted.
         let mut extension = mm_result::audio_extension(&track.audio_content_type)?;
         let mut audio = track.audio;
+        let format = output_format(&job.generation_settings).to_string();
+        // a track that is not encoded below is checked on a pass of its own
+        if extension == "wav" && format == "wav32" {
+            let shared = std::sync::Arc::new(audio);
+            let probe = shared.clone();
+            let problem = tokio::task::spawn_blocking(move || audio_pcm::output_problem(probe, "wav")).await.context("the output check stopped")??;
+            if let Some(problem) = problem {
+                anyhow::bail!("The engine returned {problem} instead of a song, so nothing was kept. Make it again; if it repeats, the engine log has the cause.");
+            }
+            audio = std::sync::Arc::try_unwrap(shared).map_err(|_| anyhow::anyhow!("the engine's track is still held by its check"))?;
+        }
         let mut replay = replay;
-        if studio_encodes_mp3(&job.generation_settings) && extension == "wav" {
+        // the engine's float output is kept at the level it came: lossless FLAC unless MP3 was asked for
+        if extension == "wav" {
             let kbps = job.generation_settings.get("mp3_bitrate").and_then(Value::as_u64).map_or(DEFAULT_MP3_KBPS, |value| value as u32);
-            let peak_clip = job.generation_settings.get("peak_clip").and_then(Value::as_u64).map_or(DEFAULT_PEAK_CLIP, |value| value as u32);
+            let target = format.clone();
             audio = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<u8>> {
-                let mut stereo = audio_pcm::decode_stereo_bytes(audio, "wav")?;
-                // a NaN would become the peak and turn the whole track into silence
-                let broken = stereo.left.iter().chain(&stereo.right).filter(|sample| !sample.is_finite()).count();
-                if broken > 0 {
-                    anyhow::bail!("the engine returned {broken} broken samples (NaN or infinity); make the song again");
+                if target == "wav32" {
+                    return Ok(audio);
                 }
-                audio_post::encode::normalize_peak(&mut stereo, peak_clip);
-                audio_post::encode::mp3(&stereo, kbps)
+                let stereo = audio_pcm::decode_stereo_bytes(audio, "wav")?;
+                if let Some(problem) = audio_pcm::stereo_problem(&stereo) {
+                    anyhow::bail!("The engine returned {problem} instead of a song, so nothing was kept. Make it again; if it repeats, the engine log has the cause.");
+                }
+                match target.as_str() {
+                    "mp3" => audio_post::encode::mp3(&stereo, kbps),
+                    _ => audio_post::encode::flac(&stereo),
+                }
             })
             .await
-            .context("the MP3 encoder stopped")??;
-            extension = "mp3";
-            // the track says what it is: an MP3 at the rate LAME wrote
-            let written = Value::from(audio_post::encode::mp3_bitrate(kbps));
+            .context("the encoder stopped")??;
+            extension = match format.as_str() { "mp3" => "mp3", "wav32" => "wav", _ => "flac" };
             for record in [
                 generation_settings.as_object_mut().context("generation settings are not a JSON object")?,
                 replay.as_object_mut().context("the replay request is not a JSON object")?,
             ] {
-                record.insert("output_format".into(), Value::from("mp3"));
-                record.insert("mp3_bitrate".into(), written.clone());
+                record.insert("output_format".into(), Value::from(match format.as_str() { "mp3" => "mp3", "wav32" => "wav32", _ => "flac" }));
+                if format == "mp3" {
+                    // the track says what it is: an MP3 at the rate LAME wrote
+                    record.insert("mp3_bitrate".into(), Value::from(audio_post::encode::mp3_bitrate(kbps)));
+                } else {
+                    record.remove("mp3_bitrate");
+                }
             }
         }
         let metadata = serde_json::json!({
@@ -7227,11 +7638,16 @@ async fn cancel_music_job(
             format!("mm-server cancel is unavailable: {error}"),
         )
     })?;
+    let failure = (remote.status == "failed").then(|| job_failure_reason(&state, &job_id)).flatten();
     let mut jobs = state.jobs.write().await;
     let job = jobs
         .get_mut(&job_id)
         .ok_or_else(|| api_error(StatusCode::NOT_FOUND, "Music job was not found.".into()))?;
-    apply_remote_status(job, &remote.status);
+    apply_remote_status(job, &remote.status, failure);
+    // kept at once: a studio closed right after the stop must not start the song again
+    if let Err(error) = state.library.set_music_job_status(&job_id, job_status_name(&job.status), &job.message) {
+        eprintln!("[ERROR] the stopped song's state could not be kept: {error:#}");
+    }
     Ok(Json(job.clone()))
 }
 
@@ -7265,9 +7681,11 @@ impl MmServerClient {
             .unwrap_or_else(|_| "http://127.0.0.1:8086".into())
             .trim_end_matches('/')
             .to_owned();
+        // the engine's server drops a connection idle for 5 s; a pooled one can be
+        // taken as it closes and the request is lost, so every request opens its own
         Self {
             base_url,
-            http: net::client(),
+            http: net::builder().pool_max_idle_per_host(0).build().expect("an HTTP client with a proxy callback builds"),
         }
     }
 
@@ -7282,6 +7700,13 @@ impl MmServerClient {
 
     async fn props(&self) -> anyhow::Result<Value> {
         self.json_response(self.http.get(self.url("/props")).send().await?).await
+    }
+
+    /// The prompt length of a caption and lyrics, counted by the engine's own tokenizer.
+    async fn tokenize(&self, caption: &str, lyrics: &str) -> anyhow::Result<u64> {
+        let body = serde_json::json!({ "caption": caption, "lyrics": lyrics });
+        let answer: Value = self.json_response(self.http.post(self.url("/tokenize")).json(&body).send().await?).await?;
+        answer.get("tokens").and_then(Value::as_u64).ok_or_else(|| anyhow::anyhow!("the engine's /tokenize answered without a count"))
     }
 
     async fn submit(&self, request: Value) -> anyhow::Result<MmServerSubmitResponse> {
@@ -7403,25 +7828,29 @@ fn selected_local_music_engine(configuration: &StudioConfiguration) -> Option<St
 
 /// The bitrate a track is encoded at when the request names none.
 const DEFAULT_MP3_KBPS: u32 = 320;
-/// Samples per million allowed to clip when the level is set, as the engine does.
-const DEFAULT_PEAK_CLIP: u32 = 10;
 
-/// Whether the studio makes this track's MP3 itself; the engine's own default
-/// output is MP3, so a request naming no format counts.
-fn studio_encodes_mp3(settings: &Value) -> bool {
-    settings.get("output_format").and_then(Value::as_str).is_none_or(|format| format == "mp3")
+/// The format a track is kept in: what was asked for, else lossless FLAC.
+fn output_format(settings: &Value) -> &str {
+    settings.get("output_format").and_then(Value::as_str).unwrap_or("flac")
 }
 
-/// What the engine is asked for. An MP3 is made by the studio with LAME from
-/// the engine's unencoded 32-bit float output - the model's own rate and
-/// precision - so no track is ever encoded twice or by the engine's encoder.
+fn validate_output_format(format: &str) -> Result<(), String> {
+    if matches!(format, "flac" | "mp3" | "wav32") {
+        Ok(())
+    } else {
+        Err("output_format must be one of: flac, mp3, wav32".into())
+    }
+}
+
+/// What the engine is asked for: always its unencoded 32-bit float output, the
+/// model's own rate, precision and level, so a track is encoded once, here, and
+/// nothing changes its loudness on the way.
 fn engine_submission(body: &Value) -> Value {
     let mut engine = body.clone();
-    if studio_encodes_mp3(body) {
-        if let Some(fields) = engine.as_object_mut() {
-            fields.insert("output_format".into(), Value::from("wav32"));
-            fields.remove("mp3_bitrate");
-        }
+    if let Some(fields) = engine.as_object_mut() {
+        fields.insert("output_format".into(), Value::from("wav32"));
+        fields.remove("mp3_bitrate");
+        fields.remove("peak_clip");
     }
     engine
 }
@@ -7448,9 +7877,7 @@ fn mm_request_from(request: &CreateMusicJobRequest, selected_profile_id: Option<
         }
     }
     if let Some(output_format) = request.output_format.as_deref() {
-        if !matches!(output_format, "mp3" | "wav16" | "wav24" | "wav32") {
-            return Err("output_format must be one of: mp3, wav16, wav24, wav32".into());
-        }
+        validate_output_format(output_format)?;
     }
     let models = match request.models.clone() {
         Some(models) => {
@@ -7497,7 +7924,6 @@ fn mm_request_from(request: &CreateMusicJobRequest, selected_profile_id: Option<
     body["steps"] = Value::from(request.steps.unwrap_or(30));
     body["lm_batch_size"] = Value::from(request.lm_batch_size.unwrap_or(1));
     body["synth_batch_size"] = Value::from(request.synth_batch_size.unwrap_or(1));
-    body["peak_clip"] = Value::from(request.peak_clip.unwrap_or(10));
     body["mp3_bitrate"] = Value::from(request.mp3_bitrate.unwrap_or(DEFAULT_MP3_KBPS));
     insert_optional(&mut body, "seed", request.seed);
     insert_optional(&mut body, "lm_seed", request.lm_seed);
@@ -7596,7 +8022,7 @@ fn uuid_suffix() -> String {
     uuid::Uuid::now_v7().to_string()
 }
 
-fn apply_remote_status(job: &mut MusicJob, remote_status: &str) {
+fn apply_remote_status(job: &mut MusicJob, remote_status: &str, failure: Option<String>) {
     match remote_status {
         "queued" => {
             job.status = MusicJobStatus::Queued;
@@ -7616,7 +8042,7 @@ fn apply_remote_status(job: &mut MusicJob, remote_status: &str) {
         "failed" => {
             job.status = MusicJobStatus::Failed;
             job.phase = MusicJobPhase::Failed;
-            job.message = "mm-server reported a failed job.".into();
+            job.message = failure.unwrap_or_else(|| "mm-server reported a failed job; its log has the reason.".into());
         }
         "cancelled" => {
             job.status = MusicJobStatus::Cancelled;
@@ -7639,6 +8065,16 @@ fn api_error(status: StatusCode, error: String) -> (StatusCode, Json<ApiError>) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_recogniser_variant_weighs_every_file_it_brings() {
+        let fp32 = karaoke_variant_bytes(lyrics_sync::PARAKEET_FP32).unwrap();
+        assert!(fp32 > 2_000_000_000, "the fp32 graph comes with its 2.4 GB of weights: {fp32}");
+        let ultra = karaoke_variant_bytes(lyrics_sync::PARAKEET_ULTRA).unwrap();
+        assert!(ultra > lyrics_sync::asset(lyrics_sync::PARAKEET_ULTRA).unwrap().bytes);
+        assert!(karaoke_variant_bytes("parakeet-decoder").is_none(), "only an encoder is a choice");
+        assert!(karaoke_variant_bytes("onnxruntime").is_none());
+    }
 
     #[test]
     fn a_lost_song_is_told_why_from_the_run_that_ended() {
@@ -7712,7 +8148,14 @@ mod tests {
             assert_eq!(options.device_chain(&[device]), vec![device]);
         }
         let auto = EngineOptions::default();
-        assert_eq!(auto.device_chain(&[ComputeBackend::Cuda, ComputeBackend::Vulkan]), vec![ComputeBackend::Cpu]);
+        // Off Windows the chain starts from Auto itself, the engine's own best
+        // device, so only a Windows chain loses entries to CUDA and Vulkan.
+        let chain = auto.device_chain(&[ComputeBackend::Cuda, ComputeBackend::Vulkan]);
+        if cfg!(windows) {
+            assert_eq!(chain, vec![ComputeBackend::Cpu]);
+        } else {
+            assert_eq!(chain, vec![ComputeBackend::Auto, ComputeBackend::Cpu]);
+        }
         assert_eq!(auto.device_chain(&[]).last(), Some(&ComputeBackend::Cpu));
     }
 
@@ -7736,14 +8179,16 @@ mod tests {
     }
 
     #[test]
-    fn the_engine_is_asked_for_float_when_the_studio_makes_the_mp3() {
-        let mp3 = serde_json::json!({ "caption": "x", "output_format": "mp3", "mp3_bitrate": 320 });
+    fn the_engine_is_always_asked_for_its_float_output() {
+        let mp3 = serde_json::json!({ "caption": "x", "output_format": "mp3", "mp3_bitrate": 320, "peak_clip": 10 });
         let sent = engine_submission(&mp3);
         assert_eq!(sent["output_format"], "wav32");
         assert!(sent.get("mp3_bitrate").is_none());
+        assert!(sent.get("peak_clip").is_none());
         assert_eq!(engine_submission(&serde_json::json!({ "caption": "x" }))["output_format"], "wav32");
-        let wav = serde_json::json!({ "caption": "x", "output_format": "wav24" });
-        assert_eq!(engine_submission(&wav), wav);
+        assert_eq!(engine_submission(&serde_json::json!({ "caption": "x", "output_format": "flac" }))["output_format"], "wav32");
+        assert_eq!(output_format(&serde_json::json!({ "caption": "x" })), "flac");
+        assert_eq!(output_format(&serde_json::json!({ "output_format": "mp3" })), "mp3");
     }
 
     /// Every file the editor page loads has to be embedded. The WaveSurfer
@@ -7821,8 +8266,7 @@ mod tests {
             lm_batch_size: Some(2),
             synth_batch_size: Some(3),
             dit_cfg: Some(1.7),
-            peak_clip: Some(10),
-            output_format: Some("wav24".into()),
+            output_format: Some("flac".into()),
             mp3_bitrate: Some(320),
             models: Some(Mm3ModelSelection {
                 lm_model: Some("lm.gguf".into()),
@@ -7836,10 +8280,9 @@ mod tests {
         .unwrap();
         assert_eq!(body["duration"], 30.0);
         assert_eq!(body["lm_model"], "lm.gguf");
-        assert_eq!(body["output_format"], "wav24");
+        assert_eq!(body["output_format"], "flac");
         assert_eq!(body["lm_batch_size"], 2);
         assert_eq!(body["synth_batch_size"], 3);
-        assert_eq!(body["peak_clip"], 10);
         assert_eq!(body["mp3_bitrate"], 320);
         assert!(body.get("reference_audio").is_none());
     }
@@ -7863,8 +8306,7 @@ mod tests {
             lm_batch_size: None,
             synth_batch_size: None,
             dit_cfg: Some(1.7),
-            peak_clip: None,
-            output_format: Some("flac".into()),
+            output_format: Some("wav24".into()),
             mp3_bitrate: None,
             models: Some(Mm3ModelSelection {
                 lm_model: Some("lm.gguf".into()),
@@ -7887,7 +8329,7 @@ mod tests {
             title: None,
             caption: "night drive".into(), lyrics: "[verse] one line".into(), duration_seconds: 60.0,
             steps: None, seed: None, lm_seed: None, lm_cfg: None, lm_top_k: None,
-            lm_batch_size: None, synth_batch_size: None, dit_cfg: None, peak_clip: None,
+            lm_batch_size: None, synth_batch_size: None, dit_cfg: None,
             output_format: None, mp3_bitrate: None,
             models: Some(Mm3ModelSelection { lm_model: Some("lm.gguf".into()), depth_model: Some("depth.gguf".into()), cond_model: Some("condition.gguf".into()), dit_model: Some("dit.gguf".into()), vae_model: Some("vocoder.gguf".into()) }),
         };
@@ -7895,7 +8337,6 @@ mod tests {
         assert_eq!(body["steps"], 30);
         assert_eq!(body["lm_batch_size"], 1);
         assert_eq!(body["synth_batch_size"], 1);
-        assert_eq!(body["peak_clip"], 10);
         assert_eq!(body["mp3_bitrate"], 320);
 
         let invalid = CreateMusicJobRequest { client_ref: None, synth_batch_size: Some(10), ..request };
@@ -7972,14 +8413,13 @@ mod tests {
                 lm_batch_size: None,
                 synth_batch_size: None,
                 dit_cfg: None,
-                peak_clip: None,
                 output_format: None,
                 mp3_bitrate: None,
                 models: None,
             },
             PRIMARY_MUSIC_ENGINE_ID.into(),
         );
-        apply_remote_status(&mut job, "not-a-real-status");
+        apply_remote_status(&mut job, "not-a-real-status", None);
         assert!(matches!(job.status, MusicJobStatus::Failed));
     }
 
@@ -7997,14 +8437,14 @@ mod tests {
 
     #[test]
     fn replay_synthesis_keeps_audio_codes_and_only_applies_confirmed_synthesis_overrides() {
-        let request = ReplayMusicJobRequest { client_ref: None, song_id: None, replay_request: None, steps: Some(42), seed: Some(9), dit_cfg: Some(1.9), output_format: Some("wav24".into()), models: Some(Mm3ModelSelection { dit_model: Some("dit-q6.gguf".into()), ..Default::default() }) };
+        let request = ReplayMusicJobRequest { client_ref: None, song_id: None, replay_request: None, steps: Some(42), seed: Some(9), dit_cfg: Some(1.9), output_format: Some("mp3".into()), models: Some(Mm3ModelSelection { dit_model: Some("dit-q6.gguf".into()), ..Default::default() }) };
         let replay = serde_json::json!({"caption":"night drive","lyrics":"[verse] hi","audio_codes":"1,2,3,4,5,6,7,8","lm_seed":123,"lm_cfg":1.5,"dit_cfg":1.7,"steps":30,"seed":1,"dit_model":"dit-q4.gguf"});
         let prepared = prepare_replay_synthesis(replay, &request).unwrap();
         assert_eq!(prepared["audio_codes"], "1,2,3,4,5,6,7,8");
         assert_eq!(prepared["steps"], 42);
         assert_eq!(prepared["seed"], 9);
         assert_eq!(prepared["dit_cfg"], 1.9);
-        assert_eq!(prepared["output_format"], "wav24");
+        assert_eq!(prepared["output_format"], "mp3");
         assert_eq!(prepared["dit_model"], "dit-q6.gguf");
         assert_eq!(prepared["lm_seed"], 123);
     }

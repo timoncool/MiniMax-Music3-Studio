@@ -3,6 +3,64 @@
 What changed, newest first. Dates are release dates; the studio is versioned by its
 Windows build.
 
+## 2026-10-09 — 3.5.0
+
+### Added
+
+- **Anonymous statistics and news from the hub.** The start screen and Settings - Anonymous statistics have
+  a checkbox, on by default, with which the studio sends once a day how many songs were made, failed or
+  were cancelled, the model set used, its version, the OS and the class of the graphics card - never lyrics,
+  prompts, audio or file names; What is sent shows the report, and DO_NOT_TRACK=1 or STUDIO_TELEMETRY=0
+  turns it off entirely. News from the author arrive without an update, on top of the bundled ones.
+- **Quitting asks first while a song is being made**, and stops it if you agree; a song the
+  studio was closed on is started again at the next start (up to three times), and one you stopped
+  stays stopped (as in YuE2 Studio).
+- **A note on every song, and its parameters** sent to the form, shown as JSON and saved to a
+  file, as in ACE-Step Studio; reusing a song opens the studio form, where its fields are.
+- **Engine progress on the card**: the stage, its step counter and the time left.
+- **Video export settings**: frame size from 1080p to 240p and AAC from 128 to 320 kbps.
+- **Parakeet Ultra int8** for karaoke: Moondream's fine-tune of Parakeet, quantized, a recogniser
+  of its own beside v3, which stays as it was.
+- The window keeps its size, place and maximised state; the player its repeat and shuffle.
+- **macOS and Linux builds**, as in YuE2 Studio: Apple Silicon with the engine and Audio to
+  MIDI on Metal, data in Application Support (after stalexxx's port); Linux x86-64 as a .deb
+  and an AppImage with the engine on Vulkan, the graphics card named and child processes
+  ending with the studio (after SkySlider's fork). Built by hand from a workflow of their own.
+- **The prompt checked while it is written**: the length counted by the engine's own tokenizer
+  (marked as an estimate when the engine is not running), each lyrics line whose words follow
+  a section tag on the same line, which the engine never sings, and a caption that does not say
+  who sings. A prompt over 5000 tokens is refused with how much to cut. Agents get the same
+  check as `song_prompt_check`.
+
+### Fixed
+
+- The recommended model set fits the computer's memory as well as the card, and a set that needs
+  more memory than the computer has says so on the start screen; full BF16 weights are no longer
+  recommended, Q8 is near lossless at half the size (as in YuE2 Studio).
+- Audio to MIDI no longer needs CUDA 13: it runs on CUDA where the engine does and on the
+  processor elsewhere (Pascal, AMD, Intel); the new package is fetched once into a folder of its
+  own.
+- The MIDI editor keeps notes in place after an unknown meta event (files from Reaper).
+- The exported video's visualizer moves as in the player; its background no longer freezes on
+  zoom and pan.
+- Updating a LoRA from the catalogue left its old weights beside the new ones, and the engine
+  refused the pair.
+- Training shows the loss as loss.
+- A model set downloaded or picked component by component that is exactly one of the declared sets
+  is recorded as that set, so songs and statistics name it (as in YuE2 and ACE-Step Studio).
+
+### Changed
+
+- **A song is kept as the model made it.** The engine hands over its float output and the
+  studio encodes it once, changing nothing on the way: lossless 24-bit FLAC by default, written
+  by libFLAC 1.5.0, the reference encoder; MP3 by LAME when chosen. Generation no longer
+  normalises the peak: Normalise is a stage under Process, after mastering. A float above full
+  scale is lowered into FLAC and MP3 as a whole rather than cut.
+- **Tags in every kept format** (lofty): title, artist, genre, tempo, lyrics and cover go into
+  a FLAC's Vorbis comments and picture block as into an MP3's ID3v2.4.
+- **Engine: minimaxmusic.cpp of 8 October** (ggml 0.26).
+- **Trainer: HOT-Step of 7 October**, about 14% faster per step with identical weights.
+
 ## 2026-10-01 — 3.4.0
 
 ### Added

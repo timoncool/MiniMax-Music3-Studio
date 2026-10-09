@@ -24,11 +24,15 @@ export interface Song {
   queuePosition?: number; // Position in queue (undefined = actively generating, number = waiting in queue)
   progress?: number;
   stage?: string;
+  /** The running stage's counter, e.g. `57/64 · ~2:50`. */
+  stageDetail?: string;
   generationParams?: any;
   tags: string[];
   audioUrl?: string;
   /** The thumbs-up, kept with the song in the library. */
   liked?: boolean;
+  /** The person's own note on the song, kept in the library. */
+  note?: string;
   /** When it was liked: the liked list is read from the latest. */
   likedAt?: Date;
   isPublic?: boolean;
@@ -108,9 +112,7 @@ export interface Music3Request {
   /** Flow-matching variations per song, 1..9. */
   synth_batch_size: number;
   dit_cfg: number;
-  /** Percentile peak normalisation; 0 disables clipping. WAV32 ignores it. */
-  peak_clip: number;
-  output_format: 'mp3' | 'wav16' | 'wav24' | 'wav32';
+  output_format: 'flac' | 'mp3';
   mp3_bitrate: number;
   /** Library title only — never sent to the engine. */
   title?: string;

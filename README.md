@@ -62,8 +62,8 @@ Code, save [docs/mcp-skill.md](docs/mcp-skill.md) as `~/.claude/skills/minimax-m
 - **A proxy for the whole studio** — HTTP, HTTPS, SOCKS5 or SOCKS4, with a login: model
   downloads, Hugging Face, OpenRouter and updates go through it.
 - **Generate music locally** with the complete Music3 component set: caption, lyrics,
-  duration, DiT steps, LM CFG and top-k, DiT CFG, peak clip, separate DiT and LM seeds,
-  several songs per prompt and several variations per song, MP3 or 16/24/32-bit WAV.
+  duration, DiT steps, LM CFG and top-k, DiT CFG, separate DiT and LM seeds,
+  several songs per prompt and several variations per song, lossless FLAC or MP3.
 - **Reproduce any track exactly.** Every generation stores its request and its audio codes,
   so a track can be re-rendered deterministically, or re-rendered with different steps,
   seed or output format.
@@ -93,8 +93,8 @@ Code, save [docs/mcp-skill.md](docs/mcp-skill.md) as `~/.claude/skills/minimax-m
 - **Every result is a track** — stems, a processed take, a re-render and a cover land in
   the library as tracks of their own, each linked to the one it was made from and keeping
   the settings it was made with.
-- **Export files that carry their own data** — MP3s are written with ID3v2.4: title,
-  artist, album, genre, tempo, the lyrics and the cover art.
+- **Export files that carry their own data** — title, artist, album, genre, tempo, the
+  lyrics and the cover art go into a FLAC's Vorbis comments and an MP3's ID3v2.4.
 - **Choose your own quality/VRAM trade-off** in the model manager. Nothing downloads by
   itself.
 - **LoRA** — LoRA and LoKr for the language model (the composition) and for the DiT (the
@@ -131,15 +131,17 @@ Code, save [docs/mcp-skill.md](docs/mcp-skill.md) as `~/.claude/skills/minimax-m
 - **Audio processing** — noise reduction, the Spectral Lifter, a vocal naturaliser, your
   own VST3 plugins in a chain, and mastering to a reference track. Compare before and
   after while it plays, then keep the result as a version of the track or throw it away.
-- **MP3 made by the studio** — the engine renders 32-bit float and the studio encodes the
-  MP3 with LAME, so nothing is lost before the encoder.
+- **The sound as the model made it** — the engine renders 32-bit float and the studio encodes
+  it once, changing nothing on the way: lossless 24-bit FLAC by default (libFLAC, the reference
+  encoder), MP3 with LAME when you choose it. Normalisation is a stage under Process, after
+  mastering, never part of generation.
 - **Fewer steps, same sharpness** — below 30 DiT steps the engine raises the flow shift by
   itself (`29/(steps-1)`), so a fast render keeps its detail.
 - **A cover for every track** — a track without one wears a free (CC0) Wikimedia Commons
   photograph that fits the genres, moods and instruments of its style, a pattern in one of 21
   DiceBear styles, or a cover OpenRouter generates for every new track. It is chosen by the
-  track's seed, so it stays the same, a stem wears its song's, and it is written into the MP3,
-  so players show it after the download.
+  track's seed, so it stays the same, a stem wears its song's, and it is written into the
+  track's tags, so players show it after the download.
 - **One picture window** — for a cover, and for the background and centre of a music video:
   Commons photographs by search starting from the scenes a style calls up, clips free of
   copyright for a background, the track's pattern in any style, generation through
@@ -150,6 +152,14 @@ Code, save [docs/mcp-skill.md](docs/mcp-skill.md) as `~/.claude/skills/minimax-m
   message the studio shows.
 - **Likes, sorting and stems in order** — a like is kept with the song for every window and
   agent, every list sorts by date, title or length, and a song's stems fold under it.
+- **The prompt checked while you write it** — the length counted by the engine's own tokenizer
+  against its 5000-token limit, lyrics lines whose words follow a section tag and would never be
+  sung, and a caption that does not say who sings.
+- **Around every song** — a note of your own on each song, its parameters sent back to the form,
+  shown as JSON or saved to a file; the engine's stage, step and time left on the card while it
+  renders; video export from 1080p to 240p with AAC from 128 to 320 kbps; quitting while a song is
+  made asks first, and a song the studio was closed on starts again; karaoke can recognise words
+  with Parakeet Ultra int8, Moondream's fine-tune of Parakeet.
 
 ## Compose and edit MIDI
 
@@ -158,6 +168,8 @@ The embedded Signal editor has multiple tracks, instruments, drums, MIDI keyboar
 ## Screenshots
 
 ![The MIDI editor: chords, sections and notes](docs/screenshots/en-17-midi-editor.png)
+
+![The prompt checked as you write: token budget, words the engine drops, the singer's gender](docs/screenshots/en-18-prompt-check.png)
 
 | | |
 |---|---|
@@ -235,6 +247,26 @@ The main, tested path is an NVIDIA card.
   inside Windows.
 - "Auto" in a device choice takes the card when its runtime is installed, and the processor
   otherwise. The same table is in the studio, under Settings → Models.
+
+## Anonymous statistics and news
+
+The studio asks the author's server for news at start and every six hours. The request carries no id, so news
+arrive whatever you choose below: new items appear on top of the News page, and with no connection the studio shows
+the news of its release.
+
+The setup screen of the first start has a checkbox **Send anonymous usage statistics**, checked by default. The same
+switch is in Settings → Anonymous statistics, next to **What is sent** (the exact report of today) and **New install
+id**. While it is checked, the studio sends once a day:
+
+- a random install id made on this computer, not tied to the hardware or an account; unchecking the box deletes it;
+- the studio and its version, the OS name and version, the window language;
+- the graphics card as vendor, a video memory bucket (up to 8, 12, 16, 24+ GB) and the backend (CUDA, Vulkan or
+  processor);
+- how many songs were made, failed or were cancelled that day, and which model set made them.
+
+Never: lyrics, prompts, audio, file names or paths, anything personal. The server keeps the country Cloudflare
+reports for the connection, not the IP address. `DO_NOT_TRACK=1` or `STUDIO_TELEMETRY=0` in the environment turns
+statistics off entirely: no id exists and nothing is counted.
 
 ## Drive it from an agent (MCP)
 
@@ -504,6 +536,35 @@ and `TAURI_UPDATER_PUBKEY` if they are set, and otherwise from
 `%USERPROFILE%\.tauri\mm3-release.key`, its `.pub`, and `.password` beside them. It stops
 if it can find the key neither way. Model weights are never included in an installer.
 
+### macOS and Linux
+
+The studio also builds for Apple Silicon (Metal) and Linux x86-64 (Vulkan). The
+`macOS and Linux builds` workflow (`.github/workflows/release-unix.yml`) is started by hand,
+optionally with a release tag to attach the builds to; it makes the .dmg, the .deb and the
+AppImage with the scripts below.
+
+On macOS (Xcode command line tools and CMake), the engine is built from the pinned commit with
+Metal, and again whenever `engines/minimaxmusic-cpp-source.json` moves to a new commit:
+
+```bash
+scripts/build-minimax-runtime.sh ~/mm3-engine          # builds the pinned commit with Metal
+MINIMAX_MM_SERVER_ROOT=~/mm3-engine cargo run -p music-server
+scripts/build-release-macos.sh                         # the .dmg, engine and Audio to MIDI inside
+```
+
+Audio to MIDI is Windows-only as a download; on macOS `scripts/build-midi-runtime.sh <dir>`
+builds HOT-Step's `ace-midi` with Metal (point `MM3_MIDI_BIN` at the resulting `music-midi`;
+the dmg bundles it).
+
+On Linux (CMake, Ninja, the Vulkan headers and `glslc`), `scripts/build-minimax-runtime-linux.sh <dir>`
+builds `mm-server` with Vulkan and a processor build of ggml for every CPU generation, its
+libraries found beside it; `scripts/build-release-linux.sh` makes the .deb and the AppImage.
+
+`MINIMAX_MM_SERVER_ROOT` (or `MINIMAX_MM_SERVER_BIN`, the path of `mm-server` itself) tells the
+studio where the engine is. `Auto` lets the engine choose its device, Metal on a Mac and Vulkan
+on Linux, and falls back to the processor. On macOS the studio keeps its data in
+`~/Library/Application Support/MiniMax Music3 Studio`.
+
 ## Other Projects by [@timoncool](https://github.com/timoncool)
 
 | Project | Description |
@@ -562,7 +623,7 @@ What changed and when is in [CHANGELOG.md](CHANGELOG.md).
   vocal naturalizer in [ComfyUI_MusicTools](https://github.com/jeankassio/ComfyUI_MusicTools).
 - [ntc-ai](https://huggingface.co/ntc-ai) for the sliders in the LoRA catalogue, each
   credited and linked on its card.
-- The [LAME](https://lame.sourceforge.io) project for the MP3 encoder.
+- The [LAME](https://lame.sourceforge.io) project for the MP3 encoder, [Xiph.Org](https://xiph.org/flac/) for libFLAC, the FLAC encoder, and [Serial-ATA](https://github.com/Serial-ATA/lofty-rs) for lofty, which writes the tags.
 - [crmne](https://github.com/crmne) for [Spotifast](https://github.com/crmne/spotifast) (MIT): the equalizer solves its band gains as its `eq.rs` does.
 - [Jordan Eldredge](https://github.com/captbaritone) and the Webamp team for [Webamp](https://github.com/captbaritone/webamp) (MIT), which the Winamp mode runs, and for the [Winamp Skin Museum](https://skins.webamp.org). Winamp and its base skin are Nullsoft's.
 - [Jordan Berg](https://github.com/jberg) for [Butterchurn](https://github.com/jberg/butterchurn) and [butterchurn-presets](https://github.com/jberg/butterchurn-presets) (MIT), MilkDrop in the browser. MilkDrop itself is Ryan Geiss's, and each preset is its author's, named in its title.
@@ -572,3 +633,4 @@ What changed and when is in [CHANGELOG.md](CHANGELOG.md).
 - [Wikimedia Commons](https://commons.wikimedia.org) and the photographers and filmmakers who give their work to it under CC0 or into the public domain, many of them through [Unsplash](https://unsplash.com): the pictures and clips a track and its video can wear. A chosen picture keeps a link to its page.
 - [Florian Körner](https://github.com/FlorianKoerner) for [DiceBear](https://www.dicebear.com) (MIT) and the authors of its CC0 styles, the patterns a track without a cover wears, and the [resvg](https://github.com/linebender/resvg) authors, whose renderer writes them into the track as PNG.
 - [MRafStudio](https://github.com/MRafStudio) for the ideas of [pull request #34](https://github.com/timoncool/YuE2-Studio/pull/34): the Activity log, sorting, likes kept in the library and stems under their song.
+- [stalexxx](https://github.com/stalexxx) for the macOS port of [YuE2 Studio pull request #51](https://github.com/timoncool/YuE2-Studio/pull/51), the service on macOS with Metal that this studio follows, and [SkySlider](https://github.com/SkySlider) for the Linux pieces from SkySlider's fork of YuE2 Studio: adapter detection and the parent-death signal.
