@@ -46,6 +46,8 @@ Windows build.
 - Updating a LoRA from the catalogue left its old weights beside the new ones, and the engine
   refused the pair.
 - Training shows the loss as loss.
+- A model set downloaded or picked component by component that is exactly one of the declared sets
+  is recorded as that set, so songs and statistics name it (as in YuE2 and ACE-Step Studio).
 
 ### Changed
 
