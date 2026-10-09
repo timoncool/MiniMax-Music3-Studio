@@ -152,6 +152,14 @@ Code, save [docs/mcp-skill.md](docs/mcp-skill.md) as `~/.claude/skills/minimax-m
   message the studio shows.
 - **Likes, sorting and stems in order** — a like is kept with the song for every window and
   agent, every list sorts by date, title or length, and a song's stems fold under it.
+- **The prompt checked while you write it** — the length counted by the engine's own tokenizer
+  against its 5000-token limit, lyrics lines whose words follow a section tag and would never be
+  sung, and a caption that does not say who sings.
+- **Around every song** — a note of your own on each song, its parameters sent back to the form,
+  shown as JSON or saved to a file; the engine's stage, step and time left on the card while it
+  renders; video export from 1080p to 240p with AAC from 128 to 320 kbps; quitting while a song is
+  made asks first, and a song the studio was closed on starts again; karaoke can recognise words
+  with Parakeet Ultra int8, Moondream's fine-tune of Parakeet.
 
 ## Compose and edit MIDI
 
