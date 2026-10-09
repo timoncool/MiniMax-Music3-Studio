@@ -4,6 +4,8 @@
   "license": "MIT",
   "build": {
     "windows": "buildall.cmd",
+    "macos": "scripts/build-minimax-runtime.sh",
+    "linux": "scripts/build-minimax-runtime-linux.sh",
     "output": "build\\Release\\mm-server.exe"
   }
 }

@@ -506,6 +506,35 @@ and `TAURI_UPDATER_PUBKEY` if they are set, and otherwise from
 `%USERPROFILE%\.tauri\mm3-release.key`, its `.pub`, and `.password` beside them. It stops
 if it can find the key neither way. Model weights are never included in an installer.
 
+### macOS and Linux
+
+The studio also builds for Apple Silicon (Metal) and Linux x86-64 (Vulkan). The
+`macOS and Linux builds` workflow (`.github/workflows/release-unix.yml`) is started by hand,
+optionally with a release tag to attach the builds to; it makes the .dmg, the .deb and the
+AppImage with the scripts below.
+
+On macOS (Xcode command line tools and CMake), the engine is built from the pinned commit with
+Metal, and again whenever `engines/minimaxmusic-cpp-source.json` moves to a new commit:
+
+```bash
+scripts/build-minimax-runtime.sh ~/mm3-engine          # builds the pinned commit with Metal
+MINIMAX_MM_SERVER_ROOT=~/mm3-engine cargo run -p music-server
+scripts/build-release-macos.sh                         # the .dmg, engine and Audio to MIDI inside
+```
+
+Audio to MIDI is Windows-only as a download; on macOS `scripts/build-midi-runtime.sh <dir>`
+builds HOT-Step's `ace-midi` with Metal (point `MM3_MIDI_BIN` at the resulting `music-midi`;
+the dmg bundles it).
+
+On Linux (CMake, Ninja, the Vulkan headers and `glslc`), `scripts/build-minimax-runtime-linux.sh <dir>`
+builds `mm-server` with Vulkan and a processor build of ggml for every CPU generation, its
+libraries found beside it; `scripts/build-release-linux.sh` makes the .deb and the AppImage.
+
+`MINIMAX_MM_SERVER_ROOT` (or `MINIMAX_MM_SERVER_BIN`, the path of `mm-server` itself) tells the
+studio where the engine is. `Auto` lets the engine choose its device, Metal on a Mac and Vulkan
+on Linux, and falls back to the processor. On macOS the studio keeps its data in
+`~/Library/Application Support/MiniMax Music3 Studio`.
+
 ## Other Projects by [@timoncool](https://github.com/timoncool)
 
 | Project | Description |
@@ -574,3 +603,4 @@ What changed and when is in [CHANGELOG.md](CHANGELOG.md).
 - [Wikimedia Commons](https://commons.wikimedia.org) and the photographers and filmmakers who give their work to it under CC0 or into the public domain, many of them through [Unsplash](https://unsplash.com): the pictures and clips a track and its video can wear. A chosen picture keeps a link to its page.
 - [Florian Körner](https://github.com/FlorianKoerner) for [DiceBear](https://www.dicebear.com) (MIT) and the authors of its CC0 styles, the patterns a track without a cover wears, and the [resvg](https://github.com/linebender/resvg) authors, whose renderer writes them into the track as PNG.
 - [MRafStudio](https://github.com/MRafStudio) for the ideas of [pull request #34](https://github.com/timoncool/YuE2-Studio/pull/34): the Activity log, sorting, likes kept in the library and stems under their song.
+- [stalexxx](https://github.com/stalexxx) for the macOS port of [YuE2 Studio pull request #51](https://github.com/timoncool/YuE2-Studio/pull/51), the service on macOS with Metal that this studio follows, and [SkySlider](https://github.com/SkySlider) for the Linux pieces from SkySlider's fork of YuE2 Studio: adapter detection and the parent-death signal.

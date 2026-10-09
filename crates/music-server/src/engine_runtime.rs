@@ -139,8 +139,16 @@ impl EngineRuntime {
 ///
 /// Almost every Windows machine has it - some game or application put it there
 /// years ago - so this is checked, not assumed in either direction.
+#[cfg(windows)]
 pub fn vc_runtime_present() -> bool {
     VC_RUNTIME_LIBRARIES.iter().all(|library| is_on_the_search_path(library))
+}
+
+/// Off Windows the engine is built against the platform's own runtime (libc++
+/// and the system libraries), which is always present: nothing to check.
+#[cfg(not(windows))]
+pub fn vc_runtime_present() -> bool {
+    true
 }
 
 /// Installs Microsoft's redistributable when, and only when, it is missing.
