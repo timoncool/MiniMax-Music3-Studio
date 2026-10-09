@@ -6709,6 +6709,18 @@ fn engine_failure_reason() -> Option<String> {
         .then(|| "The graphics card ran out of memory while the engine was loading the models. Choose a smaller quantisation in the model manager, or close whatever else is using the card - the writing assistant holds several gigabytes of its own.".to_string())
 }
 
+/// Why the engine gave this job up: running out of memory, else its own last
+/// FATAL line after the job's start.
+fn job_failure_reason(state: &AppState, job_id: &str) -> Option<String> {
+    engine_failure_reason().or_else(|| last_fatal(&state.engine_log.lines()?, job_id))
+}
+
+fn last_fatal(lines: &[String], job_id: &str) -> Option<String> {
+    let start = format!("Job {job_id}");
+    let from = lines.iter().rposition(|line| line.contains(&start))?;
+    lines[from..].iter().rev().find_map(|line| line.split_once("FATAL:").map(|(_, why)| why.trim().to_string())).filter(|why| !why.is_empty())
+}
+
 /// Whether a lowercased log says the card ran out of room.
 fn describes_exhausted_memory(log: &str) -> bool {
     [
@@ -7129,8 +7141,9 @@ fn spawn_job_watcher(state: AppState, job_id: String) {
                 }
                 return;
             }
+            let failure = (remote.status == "failed").then(|| job_failure_reason(&state, &job_id)).flatten();
             if let Some(job) = state.jobs.write().await.get_mut(&job_id) {
-                apply_remote_status(job, &remote.status);
+                apply_remote_status(job, &remote.status, failure);
             }
         }
     });
@@ -7169,7 +7182,9 @@ async fn import_completed_mm_result(state: &AppState, job: &MusicJob, job_id: &s
         // Take the length from the job that was actually submitted.
         let mut extension = mm_result::audio_extension(&track.audio_content_type)?;
         let mut audio = track.audio;
-        if extension == "wav" {
+        let format = output_format(&job.generation_settings).to_string();
+        // a track that is not encoded below is checked on a pass of its own
+        if extension == "wav" && format == "wav32" {
             let shared = std::sync::Arc::new(audio);
             let probe = shared.clone();
             let problem = tokio::task::spawn_blocking(move || audio_pcm::output_problem(probe, "wav")).await.context("the output check stopped")??;
@@ -7181,18 +7196,18 @@ async fn import_completed_mm_result(state: &AppState, job: &MusicJob, job_id: &s
         let mut replay = replay;
         // the engine's float output is kept at the level it came: lossless FLAC unless MP3 was asked for
         if extension == "wav" {
-            let format = output_format(&job.generation_settings).to_string();
             let kbps = job.generation_settings.get("mp3_bitrate").and_then(Value::as_u64).map_or(DEFAULT_MP3_KBPS, |value| value as u32);
             let target = format.clone();
             audio = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<u8>> {
-                let stereo = audio_pcm::decode_stereo_bytes(audio.clone(), "wav")?;
-                let broken = stereo.left.iter().chain(&stereo.right).filter(|sample| !sample.is_finite()).count();
-                if broken > 0 {
-                    anyhow::bail!("the engine returned {broken} broken samples (NaN or infinity); make the song again");
+                if target == "wav32" {
+                    return Ok(audio);
+                }
+                let stereo = audio_pcm::decode_stereo_bytes(audio, "wav")?;
+                if let Some(problem) = audio_pcm::stereo_problem(&stereo) {
+                    anyhow::bail!("The engine returned {problem} instead of a song, so nothing was kept. Make it again; if it repeats, the engine log has the cause.");
                 }
                 match target.as_str() {
                     "mp3" => audio_post::encode::mp3(&stereo, kbps),
-                    "wav32" => Ok(audio),
                     _ => audio_post::encode::flac(&stereo),
                 }
             })
@@ -7273,11 +7288,12 @@ async fn cancel_music_job(
             format!("mm-server cancel is unavailable: {error}"),
         )
     })?;
+    let failure = (remote.status == "failed").then(|| job_failure_reason(&state, &job_id)).flatten();
     let mut jobs = state.jobs.write().await;
     let job = jobs
         .get_mut(&job_id)
         .ok_or_else(|| api_error(StatusCode::NOT_FOUND, "Music job was not found.".into()))?;
-    apply_remote_status(job, &remote.status);
+    apply_remote_status(job, &remote.status, failure);
     Ok(Json(job.clone()))
 }
 
@@ -7645,7 +7661,7 @@ fn uuid_suffix() -> String {
     uuid::Uuid::now_v7().to_string()
 }
 
-fn apply_remote_status(job: &mut MusicJob, remote_status: &str) {
+fn apply_remote_status(job: &mut MusicJob, remote_status: &str, failure: Option<String>) {
     match remote_status {
         "queued" => {
             job.status = MusicJobStatus::Queued;
@@ -7665,7 +7681,7 @@ fn apply_remote_status(job: &mut MusicJob, remote_status: &str) {
         "failed" => {
             job.status = MusicJobStatus::Failed;
             job.phase = MusicJobPhase::Failed;
-            job.message = "mm-server reported a failed job.".into();
+            job.message = failure.unwrap_or_else(|| "mm-server reported a failed job; its log has the reason.".into());
         }
         "cancelled" => {
             job.status = MusicJobStatus::Cancelled;
@@ -8025,7 +8041,7 @@ mod tests {
             },
             PRIMARY_MUSIC_ENGINE_ID.into(),
         );
-        apply_remote_status(&mut job, "not-a-real-status");
+        apply_remote_status(&mut job, "not-a-real-status", None);
         assert!(matches!(job.status, MusicJobStatus::Failed));
     }
 
