@@ -102,7 +102,8 @@ export const STRINGS = {
         "16-covers",
         "A cover for every track: Commons photos for the style, patterns, generation or your own file."
       ],
-      ["17-midi-editor", "The MIDI editor: tracks and notes with editable chords and section markers."]
+      ["17-midi-editor", "The MIDI editor: tracks and notes with editable chords and section markers."],
+      ["18-prompt-check", "The prompt checked as you write: the length by the engine's own tokenizer, words after a section tag that would not be sung, and a caption that does not say who sings."]
     ],
     "label": "English",
     "heroTitle": "Full-length AI music on your own GPU",
@@ -206,7 +207,23 @@ export const STRINGS = {
         "Activity and a tidy library",
         "A log of everything a connected agent changed; likes kept with the song, lists sorted by date, title or length, and stems folded under their song."
       ],
-      ["Compose and edit MIDI", "The embedded Signal editor has multiple tracks, instruments, drums, MIDI keyboard recording, tempo changes, editable chord symbols and section markers. Save a new composition as MIDI and rendered audio in the library, or update an existing track’s MIDI. SoundFonts are bundled locally; the editor sends no analytics."]
+      ["Compose and edit MIDI", "The embedded Signal editor has multiple tracks, instruments, drums, MIDI keyboard recording, tempo changes, editable chord symbols and section markers. Save a new composition as MIDI and rendered audio in the library, or update an existing track’s MIDI. SoundFonts are bundled locally; the editor sends no analytics."],
+      [
+        "The prompt checked as you write",
+        "The length counted by the engine's own tokenizer against its 5000-token limit, lines whose words follow a section tag and would never be sung, and a caption that does not say who sings."
+      ],
+      [
+        "Quitting asks first",
+        "Quitting while a song is made asks first and stops it if you agree; a song the studio was closed on starts again."
+      ],
+      [
+        "macOS and Linux (experimental)",
+        "Apple Silicon on Metal and Linux x86-64 on Vulkan, built from the same engine; not tested on real machines yet, fixes from their users are welcome."
+      ],
+      [
+        "Statistics only if you agree",
+        "A checkbox on the start screen and in Settings sends counts, never lyrics, prompts or audio; What is sent shows the report. News from the author arrive without an update."
+      ]
     ],
     "modelsTitle": "Models",
     "modelsSub": "A runnable Music3 installation is always five components: language model, RVQ depth decoder, condition encoder, DiT and vocoder.",
@@ -398,7 +415,8 @@ export const STRINGS = {
         "16-covers",
         "Обложка для любого трека: фото с Commons под стиль, узоры, генерация или свой файл."
       ],
-      ["17-midi-editor", "MIDI-СЂРµРґР°РєС‚РѕСЂ: РґРѕСЂРѕР¶РєРё Рё РЅРѕС‚С‹ СЃ СЂРµРґР°РєС‚РёСЂСѓРµРјС‹РјРё Р°РєРєРѕСЂРґР°РјРё Рё СЃРµРєС†РёСЏРјРё."]
+      ["17-midi-editor", "MIDI-СЂРµРґР°РєС‚РѕСЂ: РґРѕСЂРѕР¶РєРё Рё РЅРѕС‚С‹ СЃ СЂРµРґР°РєС‚РёСЂСѓРµРјС‹РјРё Р°РєРєРѕСЂРґР°РјРё Рё СЃРµРєС†РёСЏРјРё."],
+      ["18-prompt-check", "Проверка промпта на ходу: длина по токенизатору движка, слова после тега секции, которые не будут спеты, и описание, где не сказано, кто поёт."]
     ],
     "label": "Русский",
     "heroTitle": "Полноценные треки нейросетью — на своей видеокарте",
@@ -502,7 +520,23 @@ export const STRINGS = {
         "Журнал и порядок в библиотеке",
         "Лог всего, что изменил подключённый агент; лайки хранятся в песне, списки сортируются по дате, названию или длине, стемы свёрнуты под своей песней."
       ],
-      ["Создание и редактирование MIDI", "Встроенный Signal: несколько дорожек, инструменты, ударные, запись с MIDI-клавиатуры, изменение темпа, редактируемые аккорды и секции. Сохраните новую композицию в библиотеку со звуком и MIDI или обновите MIDI существующего трека. SoundFont входят в установку; редактор не отправляет аналитику."]
+      ["Создание и редактирование MIDI", "Встроенный Signal: несколько дорожек, инструменты, ударные, запись с MIDI-клавиатуры, изменение темпа, редактируемые аккорды и секции. Сохраните новую композицию в библиотеку со звуком и MIDI или обновите MIDI существующего трека. SoundFont входят в установку; редактор не отправляет аналитику."],
+      [
+        "Проверка промпта на ходу",
+        "Длина по токенизатору самого движка против лимита в 5000 токенов, строки, где слова идут после тега секции и не будут спеты, и описание, в котором не сказано, кто поёт."
+      ],
+      [
+        "Выход с вопросом",
+        "Выход во время генерации сначала спрашивает и останавливает песню, если согласиться; песня, на которой студию закрыли, запускается снова."
+      ],
+      [
+        "macOS и Linux (экспериментально)",
+        "Apple Silicon на Metal и Linux x86-64 на Vulkan из того же движка; на живых машинах ещё не проверено, правки от пользователей очень ждём."
+      ],
+      [
+        "Статистика только с согласия",
+        "Галочка на стартовом экране и в Настройках отправляет только счётчики, никаких текстов, промптов и звука; «Что отправляется» показывает отчёт. Новости от автора приходят без обновления."
+      ]
     ],
     "modelsTitle": "Модели",
     "modelsSub": "Рабочая установка Music3 — это всегда пять компонентов: языковая модель, RVQ depth-декодер, condition-энкодер, DiT и вокодер.",
@@ -694,7 +728,8 @@ export const STRINGS = {
         "16-covers",
         "为每首曲目选封面：符合风格的 Commons 照片、图案、生成或自己的文件。"
       ],
-      ["17-midi-editor", "MIDI зј–иѕ‘е™Ёпјље¤љиЅЁйџіз¬¦гЂЃеЏЇзј–иѕ‘зљ„е’Њеј¦е’Њж®µиђЅж ‡и®°гЂ‚"]
+      ["17-midi-editor", "MIDI зј–иѕ‘е™Ёпјље¤љиЅЁйџіз¬¦гЂЃеЏЇзј–иѕ‘зљ„е’Њеј¦е’Њж®µиђЅж ‡и®°гЂ‚"],
+      ["18-prompt-check", "边写边检查提示：按引擎分词器计算长度、段落标签后不会被唱出的词，以及没说明谁来唱的描述。"]
     ],
     "label": "中文",
     "heroTitle": "在自己的显卡上生成完整的 AI 音乐",
@@ -798,7 +833,23 @@ export const STRINGS = {
         "动态与整洁的曲库",
         "记录已连接代理所做的一切更改；喜欢随歌曲保存，列表可按日期、标题或时长排序，分轨折叠在原曲之下。"
       ],
-      ["创作和编辑 MIDI", "内置 Signal 编辑器支持多轨、乐器、鼓、MIDI 键盘录音、速度变化、可编辑和弦符号和段落标记。可将新作品的 MIDI 和渲染音频保存到曲库，或更新已有音轨的 MIDI。SoundFont 随应用本地提供，编辑器不发送分析数据。"]
+      ["创作和编辑 MIDI", "内置 Signal 编辑器支持多轨、乐器、鼓、MIDI 键盘录音、速度变化、可编辑和弦符号和段落标记。可将新作品的 MIDI 和渲染音频保存到曲库，或更新已有音轨的 MIDI。SoundFont 随应用本地提供，编辑器不发送分析数据。"],
+      [
+        "边写边检查提示",
+        "按引擎自带分词器计算长度并对照 5000 token 上限，找出跟在段落标签后而不会被唱出的歌词行，以及没有说明谁来唱的描述。"
+      ],
+      [
+        "退出前先询问",
+        "生成歌曲时退出会先询问，同意后停止；工作室关闭时中断的歌曲会重新开始。"
+      ],
+      [
+        "macOS 与 Linux（实验性）",
+        "Apple Silicon 上用 Metal，Linux x86-64 上用 Vulkan，来自同一引擎；尚未在真实机器上测试，欢迎用户提交修复。"
+      ],
+      [
+        "统计只在你同意时",
+        "开始界面和设置中的复选框只发送计数，绝不发送歌词、提示词或音频；“发送的内容”显示报告。作者的新闻无需更新即可送达。"
+      ]
     ],
     "modelsTitle": "模型",
     "modelsSub": "可运行的 Music3 安装始终由五个组件构成：语言模型、RVQ 深度解码器、条件编码器、DiT 与声码器。",
@@ -990,7 +1041,8 @@ export const STRINGS = {
         "16-covers",
         "どの曲にもジャケット：スタイルに合う Commons の写真、模様、生成、手持ちのファイル。"
       ],
-      ["17-midi-editor", "MIDI г‚Ёгѓ‡г‚Јг‚їгѓјпјљгѓ€гѓ©гѓѓг‚ЇгЃЁйџіз¬¦гЂЃз·Ёй›†гЃ§гЃЌг‚‹г‚ігѓјгѓ‰гЃЁг‚»г‚Їг‚·гѓ§гѓігЂ‚"]
+      ["17-midi-editor", "MIDI г‚Ёгѓ‡г‚Јг‚їгѓјпјљгѓ€гѓ©гѓѓг‚ЇгЃЁйџіз¬¦гЂЃз·Ёй›†гЃ§гЃЌг‚‹г‚ігѓјгѓ‰гЃЁг‚»г‚Їг‚·гѓ§гѓігЂ‚"],
+      ["18-prompt-check", "書きながらプロンプトをチェック：エンジン自身のトークナイザーでの長さ、歌われないセクションタグ後の言葉、誰が歌うか書いていないキャプション。"]
     ],
     "label": "日本語",
     "heroTitle": "自分の GPU でフルサイズの AI 音楽を",
@@ -1094,7 +1146,23 @@ export const STRINGS = {
         "アクティビティと整ったライブラリ",
         "接続中のエージェントが変更したことをすべて記録。いいねは曲と一緒に保存、一覧は日付・タイトル・長さで並べ替え、ステムは元の曲の下にまとまります。"
       ],
-      ["MIDI の作成と編集", "内蔵 Signal エディターで複数トラック、楽器、ドラム、MIDI キーボード録音、テンポ変更、コード記号とセクションの編集ができます。新しい曲を MIDI とレンダリングした音声でライブラリへ保存し、既存の曲の MIDI を更新できます。SoundFont は同梱され、エディターは解析データを送信しません。"]
+      ["MIDI の作成と編集", "内蔵 Signal エディターで複数トラック、楽器、ドラム、MIDI キーボード録音、テンポ変更、コード記号とセクションの編集ができます。新しい曲を MIDI とレンダリングした音声でライブラリへ保存し、既存の曲の MIDI を更新できます。SoundFont は同梱され、エディターは解析データを送信しません。"],
+      [
+        "書きながらプロンプトをチェック",
+        "エンジン自身のトークナイザーで 5000 トークンの上限に対する長さを数え、セクションタグの後に書かれて歌われない歌詞の行と、誰が歌うかを書いていないキャプションを示します。"
+      ],
+      [
+        "終了前に確認",
+        "曲の生成中に終了すると先に確認し、同意すれば停止します。閉じたときに中断した曲は再び始まります。"
+      ],
+      [
+        "macOS と Linux（実験的）",
+        "Apple Silicon は Metal、Linux x86-64 は Vulkan で同じエンジンから。実機ではまだ未検証で、ユーザーからの修正を歓迎します。"
+      ],
+      [
+        "統計は同意したときだけ",
+        "開始画面と設定のチェックボックスはカウントだけを送り、歌詞・プロンプト・音声は送りません。「送信される内容」でレポートを確認できます。作者のニュースはアップデートなしで届きます。"
+      ]
     ],
     "modelsTitle": "モデル",
     "modelsSub": "動作する Music3 の構成は常に五つ：言語モデル、RVQ デプスデコーダ、コンディションエンコーダ、DiT、ボコーダ。",
@@ -1286,7 +1354,8 @@ export const STRINGS = {
         "16-covers",
         "모든 트랙에 커버: 스타일에 맞는 Commons 사진, 무늬, 생성 또는 내 파일."
       ],
-      ["17-midi-editor", "MIDI нЋём§‘кё°: нЉёлћ™кіј мќЊн‘њ, нЋём§‘ к°ЂлЉҐн•њ мЅ”л“њм™Ђ кµ¬к°„ н‘њм‹њ."]
+      ["17-midi-editor", "MIDI нЋём§‘кё°: нЉёлћ™кіј мќЊн‘њ, нЋём§‘ к°ЂлЉҐн•њ мЅ”л“њм™Ђ кµ¬к°„ н‘њм‹њ."],
+      ["18-prompt-check", "쓰는 동안 프롬프트 확인: 엔진 토크나이저 기준 길이, 섹션 태그 뒤라 불리지 않을 단어, 누가 부르는지 없는 캡션."]
     ],
     "label": "한국어",
     "heroTitle": "내 GPU에서 만드는 완성형 AI 음악",
@@ -1390,7 +1459,23 @@ export const STRINGS = {
         "활동 기록과 정돈된 라이브러리",
         "연결된 에이전트가 바꾼 모든 것을 기록합니다. 좋아요는 곡과 함께 저장되고, 목록은 날짜·제목·길이로 정렬되며, 스템은 원곡 아래에 접힙니다."
       ],
-      ["MIDI 작곡과 편집", "내장 Signal 편집기는 여러 트랙, 악기, 드럼, MIDI 키보드 녹음, 템포 변경, 코드 기호와 구간 표시 편집을 지원합니다. 새 곡을 MIDI와 렌더링된 오디오로 라이브러리에 저장하거나 기존 곡의 MIDI를 갱신하세요. SoundFont는 로컬에 포함되며 편집기는 분석 데이터를 보내지 않습니다."]
+      ["MIDI 작곡과 편집", "내장 Signal 편집기는 여러 트랙, 악기, 드럼, MIDI 키보드 녹음, 템포 변경, 코드 기호와 구간 표시 편집을 지원합니다. 새 곡을 MIDI와 렌더링된 오디오로 라이브러리에 저장하거나 기존 곡의 MIDI를 갱신하세요. SoundFont는 로컬에 포함되며 편집기는 분석 데이터를 보내지 않습니다."],
+      [
+        "쓰는 동안 프롬프트 확인",
+        "엔진 자체 토크나이저로 5000 토큰 한도에 대한 길이를 세고, 섹션 태그 뒤에 적혀 불리지 않을 가사 줄과 누가 부르는지 말하지 않는 캡션을 알려 줍니다."
+      ],
+      [
+        "종료 전에 확인",
+        "곡을 만드는 중에 종료하면 먼저 묻고, 동의하면 멈춥니다. 스튜디오가 닫히며 끊긴 곡은 다시 시작됩니다."
+      ],
+      [
+        "macOS와 Linux (실험적)",
+        "Apple Silicon은 Metal, Linux x86-64는 Vulkan으로 같은 엔진에서 빌드합니다. 실제 기기에서는 아직 검증되지 않았으며 사용자의 수정을 환영합니다."
+      ],
+      [
+        "동의할 때만 통계",
+        "시작 화면과 설정의 체크박스는 개수만 보내고 가사·프롬프트·오디오는 보내지 않습니다. '보내는 내용'에서 보고서를 볼 수 있습니다. 작가의 소식은 업데이트 없이 도착합니다."
+      ]
     ],
     "modelsTitle": "모델",
     "modelsSub": "동작하는 Music3 설치는 언제나 다섯 구성 요소입니다: 언어 모델, RVQ 깊이 디코더, 조건 인코더, DiT, 보코더.",

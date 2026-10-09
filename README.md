@@ -169,6 +169,8 @@ The embedded Signal editor has multiple tracks, instruments, drums, MIDI keyboar
 
 ![The MIDI editor: chords, sections and notes](docs/screenshots/en-17-midi-editor.png)
 
+![The prompt checked as you write: token budget, words the engine drops, the singer's gender](docs/screenshots/en-18-prompt-check.png)
+
 | | |
 |---|---|
 | ![The equalizer and MilkDrop](docs/screenshots/en-14-listen.png) | ![The Winamp mode](docs/screenshots/en-15-winamp.png) |
