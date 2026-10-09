@@ -7170,6 +7170,15 @@ async fn import_completed_mm_result(state: &AppState, job: &MusicJob, job_id: &s
         // Take the length from the job that was actually submitted.
         let mut extension = mm_result::audio_extension(&track.audio_content_type)?;
         let mut audio = track.audio;
+        if extension == "wav" {
+            let shared = std::sync::Arc::new(audio);
+            let probe = shared.clone();
+            let problem = tokio::task::spawn_blocking(move || audio_pcm::output_problem(probe, "wav")).await.context("the output check stopped")??;
+            if let Some(problem) = problem {
+                anyhow::bail!("The engine returned {problem} instead of a song, so nothing was kept. Make it again; if it repeats, the engine log has the cause.");
+            }
+            audio = std::sync::Arc::try_unwrap(shared).map_err(|_| anyhow::anyhow!("the engine's track is still held by its check"))?;
+        }
         let mut replay = replay;
         // the engine's float output is kept at the level it came: lossless FLAC unless MP3 was asked for
         if extension == "wav" {
