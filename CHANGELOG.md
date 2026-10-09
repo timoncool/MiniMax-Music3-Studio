@@ -18,6 +18,11 @@ Windows build.
   MIDI on Metal, data in Application Support (after stalexxx's port); Linux x86-64 as a .deb
   and an AppImage with the engine on Vulkan, the graphics card named and child processes
   ending with the studio (after SkySlider's fork). Built by hand from a workflow of their own.
+- **The prompt checked while it is written**: the length counted by the engine's own tokenizer
+  (marked as an estimate when the engine is not running), each lyrics line whose words follow
+  a section tag on the same line, which the engine never sings, and a caption that does not say
+  who sings. A prompt over 5000 tokens is refused with how much to cut. Agents get the same
+  check as `song_prompt_check`.
 
 ### Fixed
 

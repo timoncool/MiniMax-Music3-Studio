@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { libraryChanged, setupStatusChanged, useActivity, useAssistantStatus, useSetupStatus, type ActivityEntry } from '../services/studioQueries';
+import { libraryChanged, setupStatusChanged, useActivity, useAssistantStatus, usePromptCheck, useSetupStatus, type ActivityEntry } from '../services/studioQueries';
 import { karaokeReason } from '../services/karaoke';
 import { AlertTriangle, ChevronDown, CircleAlert, Dices, FolderOpen, Loader2, RotateCcw, Save, Sparkles, Square, Tags, Trash2, Wand2, Settings2, X } from 'lucide-react';
 import type { Music3Request, Playlist, Song } from '../types';
@@ -84,9 +84,6 @@ const keptDuration = (): string => {
     return kept >= 10 && kept <= MAX_DURATION_SECONDS ? String(kept) : '';
   } catch { return ''; }
 };
-/** The tokenized caption + lyrics budget the engine enforces at submit. */
-const MAX_PROMPT_TOKENS = 5000;
-
 const PROFILE_LABEL: Record<string, string> = {
   native: 'Full Native',
   'quality-q8': 'Q8 Quality',
@@ -107,9 +104,6 @@ const numberOrUndefined = (value: string): number | undefined => {
   const parsed = Number(trimmed);
   return Number.isFinite(parsed) ? parsed : undefined;
 };
-
-/** A rough token estimate, only used to warn before the engine rejects it. */
-const estimateTokens = (text: string) => Math.ceil(text.trim().length / 3.6);
 
 // The engine refuses empty lyrics, and an instrumental is written as a song's
 // structure with no words under its tags: the tags of the lyrics in the box,
@@ -343,7 +337,8 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
   const defaults = catalog?.defaults ?? {};
   const placeholder = (key: string) => (defaults[key] === undefined ? '' : String(defaults[key]));
   const caption = joinCaption(globalMetadata, vocalDetails, arrangement);
-  const promptTokens = estimateTokens(caption) + estimateTokens(lyrics);
+  const promptCheck = usePromptCheck(caption, instrumental ? instrumentalLyrics(lyrics) : lyrics, instrumental).data;
+  const overBudget = promptCheck?.issues.some(issue => issue.code === 'prompt_too_long') === true;
 
   const profileLabel = useMemo(() => {
     if (setup?.selected_component_ids?.length) return t('customSet');
@@ -647,7 +642,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
     if (!ready) { setError(t('downloadProfileFirst')); return; }
     if (!caption.trim()) { setError(t('captionRequired')); return; }
     if (!instrumental && !lyrics.trim()) { setError(t('lyricsRequired')); return; }
-    if (promptTokens > MAX_PROMPT_TOKENS) { setError(t('promptTooLong')); return; }
+    if (overBudget) { setError(t('promptTooLong')); return; }
     setError(null);
     const request = buildRequest();
     if (forever) foreverRequest.current = { ...request };
@@ -729,8 +724,6 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
     setSteps(''); setDitCfg(''); setSynthBatch(''); setSeed(''); setRandomizeSeed(true);
     setMp3Bitrate('320'); setFormat('flac'); setModels({});
   };
-
-  const overBudget = promptTokens > MAX_PROMPT_TOKENS;
 
   return (
     <section className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-zinc-50 text-zinc-900 dark:bg-suno-panel dark:text-white">
@@ -915,9 +908,9 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
               <>
                 <span
                   className={`rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums ${overBudget ? 'bg-rose-500/10 text-rose-600 dark:text-rose-300' : 'bg-zinc-200/70 text-zinc-500 dark:bg-white/10 dark:text-zinc-400'}`}
-                  title={`${t('promptBudget')} — ${t('caption')}: ${estimateTokens(caption)}, ${t('lyrics')}: ${estimateTokens(lyrics)}`}
+                  title={promptCheck?.exact === false ? `${t('promptBudget')} — ${t('promptBudgetEstimated')}` : t('promptBudget')}
                 >
-                  {t('promptBudgetShort')} {promptTokens} / {MAX_PROMPT_TOKENS}
+                  {t('promptBudgetShort')} {promptCheck ? `${promptCheck.exact ? '' : '≈'}${promptCheck.tokens} / ${promptCheck.limit}` : '…'}
                 </span>
                 <button type="button" onClick={() => (assistantReady ? void layOutLyrics() : openAssistantSetup())} disabled={assistantReady && (assisting !== null || !lyrics.trim())} className={ICON} title={assistantReady ? t('formatLyrics') : t('setUpAssistant')}>
                   {assisting === 'sections' ? <Loader2 size={14} className="animate-spin" /> : <Tags size={14} />}
@@ -938,6 +931,16 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
             />
             <p className="mt-2 text-[11px] leading-4 text-zinc-500">{t('lyricsHint')}</p>
             {overBudget && <p className="mt-1 text-[11px] leading-4 text-rose-600 dark:text-rose-300">{t('promptTooLong')}</p>}
+            {promptCheck?.issues.filter(issue => issue.code !== 'prompt_too_long').map(issue => (
+              <p key={`${issue.code}-${issue.line ?? 0}`} className="mt-1 flex gap-1.5 text-[11px] leading-4 text-amber-700 dark:text-amber-300">
+                <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+                <span>
+                  {issue.code === 'words_on_tag_line'
+                    ? t('lyricsWordsOnTagLine').replace('{line}', String(issue.line)).replace('{text}', () => issue.text ?? '')
+                    : t('captionVocalGenderMissing')}
+                </span>
+              </p>
+            ))}
           </Card>
 
           <AdapterPicker

@@ -112,7 +112,8 @@ connected and the address to paste.
 **A song from an idea**
 
 1. `writing_guide` topic `song`, `writing_examples` with the genre and mood.
-2. Write the caption and lyrics yourself.
+2. Write the caption and lyrics yourself, then `song_prompt_check`: fix every line it names (words after a
+   section tag are never sung), say who sings in the vocal details, and stay under the token limit.
 3. `song_create` (with `title`, `cover_prompt` and `duration_seconds`), then
    `studio_wait` with its `job_id`.
 4. `player_play` with the new song's id to let the user hear it; `ui_screenshot` shows it.

@@ -356,7 +356,7 @@ fn annotations(name: &str) -> Value {
     // a verb that changes something outweighs a noun that reads
     const CHANGES: &[&str] = &["install", "import", "remove", "delete", "refresh", "create", "update", "start", "cancel", "select", "download", "apply", "restart"];
     // reads whose names the rules above miss: create_form names the create page
-    const READ_NAMES: &[&str] = &["lyrics_find", "cover_prompt_render", "studio_wait", "engine_presets_get", "assistant_requests_wait", "ui_console", "song_defaults", "create_form_get", "library_liked"];
+    const READ_NAMES: &[&str] = &["lyrics_find", "cover_prompt_render", "studio_wait", "engine_presets_get", "assistant_requests_wait", "ui_console", "song_defaults", "create_form_get", "library_liked", "song_prompt_check"];
     // writes over what was stored, so the earlier content is gone: a client asks first
     const OVERWRITES: &[&str] = &["library_song_update", "playlist_update", "dataset_update", "dataset_song_update", "dataset_song_describe", "dataset_prepare", "lora_update", "stems_split", "karaoke_make", "midi_transcribe", "cover_draw", "cover_set_from_file", "openrouter_set_key"];
     let changes = CHANGES.iter().any(|verb| name.split('_').any(|word| word == *verb));
@@ -952,6 +952,12 @@ fn tools() -> &'static [Tool] {
                 description: "What the engine does with a song_create field left out: its default steps, guidance, duration and sampling, its version, and the weights it serves.",
                 schema: nothing,
                 call: |_| get("/v1/local-models/music".into()),
+            },
+            Tool {
+                name: "song_prompt_check",
+                description: "Check a caption and lyrics before song_create: the prompt length counted by the engine's tokenizer against its 5000 token limit (exact false when the engine is not running and the count is an estimate), lyrics lines whose words follow a section tag on the same line and are never sung, and a caption that does not say who sings.",
+                schema: || object(json!({ "caption": { "type": "string" }, "lyrics": { "type": "string" }, "instrumental": { "type": "boolean" } }), &["caption", "lyrics"]),
+                call: |args| post("/v1/music/prompt-check".into(), args.clone()),
             },
             Tool {
                 name: "models_select",
