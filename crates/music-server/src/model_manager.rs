@@ -56,6 +56,8 @@ pub struct Profile {
     pub recommended: bool,
     pub components: Vec<&'static str>,
     pub total_bytes: u64,
+    /// Memory this machine needs for the set: less when its card holds the weights.
+    pub ram_needed_gb: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -665,14 +667,26 @@ fn part_path(path: &Path) -> PathBuf {
     PathBuf::from(value)
 }
 
+const PROFILE_SETS: [(&str, &str, bool, [&str; 5]); 5] = [
+    ("minimal", "Minimal - Q3_K_M / Q4_K_M / Q3_K_M (8 GB cards)", false, ["lm-q3", "depth-q4", "condition-f32", "dit-q3", "vocoder-f32"]),
+    ("recommended-light", "Light - Q4_K_M / Q4_K_M / Q4_K_S (speed / low VRAM)", false, ["lm-q4", "depth-q4", "condition-f32", "dit-q4-s", "vocoder-f32"]),
+    ("balanced", "Balanced - Q6_K / Q8_0 / Q5_K_M", false, ["lm-q6", "depth-q8", "condition-f32", "dit-q5", "vocoder-f32"]),
+    ("quality-q8", "Recommended - Quality Q8_0", true, ["lm-q8", "depth-q8", "condition-f32", "dit-q8", "vocoder-f32"]),
+    ("native", "Full native - BF16 / F32 original weights", false, ["lm-bf16", "depth-bf16", "condition-f32", "dit-f32", "vocoder-f32"]),
+];
+
 fn profiles() -> Vec<Profile> {
-    vec![
-        profile("minimal", "Minimal - Q3_K_M / Q4_K_M / Q3_K_M (8 GB cards)", false, &["lm-q3", "depth-q4", "condition-f32", "dit-q3", "vocoder-f32"]),
-        profile("recommended-light", "Light - Q4_K_M / Q4_K_M / Q4_K_S (speed / low VRAM)", false, &["lm-q4", "depth-q4", "condition-f32", "dit-q4-s", "vocoder-f32"]),
-        profile("balanced", "Balanced - Q6_K / Q8_0 / Q5_K_M", false, &["lm-q6", "depth-q8", "condition-f32", "dit-q5", "vocoder-f32"]),
-        profile("quality-q8", "Recommended - Quality Q8_0", true, &["lm-q8", "depth-q8", "condition-f32", "dit-q8", "vocoder-f32"]),
-        profile("native", "Full native - BF16 / F32 original weights", false, &["lm-bf16", "depth-bf16", "condition-f32", "dit-f32", "vocoder-f32"]),
-    ]
+    PROFILE_SETS.iter().map(|(id, label, recommended, ids)| profile(id, label, *recommended, ids)).collect()
+}
+
+/// The bytes of a set's five files, the weights a song is made with.
+pub fn profile_weights_bytes(id: &str) -> u64 {
+    let all = components();
+    PROFILE_SETS
+        .iter()
+        .find(|(profile, _, _, _)| *profile == id)
+        .map(|(_, _, _, ids)| ids.iter().filter_map(|id| all.iter().find(|component| component.id == *id)).map(|component| component.bytes).sum())
+        .unwrap_or(0)
 }
 
 pub fn profile_exists(id: &str) -> bool {
@@ -681,7 +695,8 @@ pub fn profile_exists(id: &str) -> bool {
 
 fn profile(id: &'static str, label: &'static str, recommended: bool, ids: &[&'static str]) -> Profile {
     let all = components();
-    Profile { id, label, backend: ENGINE_ID, installable: true, recommended, components: ids.to_vec(), total_bytes: ids.iter().filter_map(|id| all.iter().find(|component| component.id == *id)).map(|component| component.bytes).sum() }
+    let ram_needed_gb = crate::presets::ram_needed_gb(id, profile_weights_bytes(id), crate::presets::hardware().total_vram_gb);
+    Profile { id, label, backend: ENGINE_ID, installable: true, recommended, components: ids.to_vec(), total_bytes: ids.iter().filter_map(|id| all.iter().find(|component| component.id == *id)).map(|component| component.bytes).sum(), ram_needed_gb }
 }
 
 fn components() -> Vec<Component> {

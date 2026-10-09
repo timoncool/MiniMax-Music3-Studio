@@ -77,7 +77,7 @@ fn probe() -> &'static Hardware {
         let total_ram_gb = system.total_memory() as f64 / 1_000_000_000.0;
         let (gpu_name, total_vram_gb) = nvidia_smi().or_else(other_card).unwrap_or_else(|| ("No NVIDIA GPU detected".into(), 0.0));
         let has_gpu = total_vram_gb > 0.0;
-        let (recommended, reason) = recommend_for_hardware(&gpu_name, total_vram_gb);
+        let (recommended, reason) = recommend_for_hardware(&gpu_name, total_vram_gb, total_ram_gb, crate::model_manager::profile_weights_bytes);
         Hardware { gpu_name, total_vram_gb, total_ram_gb, has_gpu, recommended, reason }
     })
 }
@@ -86,39 +86,61 @@ pub fn hardware() -> Hardware {
     probe().clone()
 }
 
-/// VRAM tiers follow the real strict peak of each complete five-component set.
-/// Full fidelity is the target whenever the card can hold it; the Light set is
-/// only ever the recommendation in the low-VRAM tier, never a quality default.
-fn recommend_for_hardware(gpu_name: &str, total_vram_gb: f64) -> (&'static str, String) {
+/// The local presets with the set each installs and the VRAM its tier needs.
+/// The thresholds are the sets' own weights, not round numbers: the full
+/// native set is 26.6 GB of BF16 and F32 files, Quality Q8 is 12.8 GB,
+/// balanced 9.8 GB, light 7.7 GB, and each needs room above that for
+/// activations, so every tier is set above the set it installs. Minimal is
+/// 6.5 GB, and the engine only ever holds the language model with the depth
+/// decoder at its peak (5.0 GB here), so an 8 GB card runs it.
+const VRAM_TIERS: [(&str, &str, f64); 5] = [
+    ("native-full", "native", 30.0),
+    ("native-quality", "quality-q8", 15.0),
+    ("native-balanced", "balanced", 11.5),
+    ("native-efficient", "recommended-light", 9.5),
+    ("native-minimal", "minimal", 7.0),
+];
+
+/// The unquantised set stays in the list for whoever picks it; the studio never recommends full weights,
+/// Q8_0 is near lossless at half the memory.
+const FULL_WEIGHTS_PRESET: &str = "native-full";
+
+/// What the system, the window and the service hold beside the models.
+const SYSTEM_RAM_GB: f64 = 4.0;
+/// A set read from disk passes through memory even when its weights end on the card.
+const LOADING_RAM_GB: f64 = 2.0;
+/// The KV cache and compute buffers of the longest songs, when they live in RAM.
+const WORK_RAM_GB: f64 = 2.0;
+
+/// Memory a set needs on this machine. On a card the set's tier fits, the
+/// weights live in video memory; otherwise they live in RAM with the buffers.
+pub fn ram_needed_gb(profile: &str, weights_bytes: u64, total_vram_gb: f64) -> f64 {
+    let on_card = VRAM_TIERS.iter().any(|(_, id, tier)| *id == profile && total_vram_gb >= *tier);
+    if on_card {
+        SYSTEM_RAM_GB + LOADING_RAM_GB
+    } else {
+        weights_bytes as f64 / 1_000_000_000.0 + WORK_RAM_GB + SYSTEM_RAM_GB
+    }
+}
+
+/// The largest set the card and the memory both hold. Full weights are never
+/// the answer, and the Light set is only ever recommended in the low-VRAM tier.
+fn recommend_for_hardware(gpu_name: &str, total_vram_gb: f64, total_ram_gb: f64, weights_bytes: impl Fn(&str) -> u64) -> (&'static str, String) {
     if total_vram_gb <= 0.0 {
         return (
             "full-openrouter",
             "No NVIDIA VRAM was detected; Full OpenRouter avoids selecting a local Music3 set that cannot fit.".into(),
         );
     }
-
-    // The thresholds are the sets' own weights, not round numbers: the full
-    // native set is 26.6 GB of BF16 and F32 files, so recommending it at 20 GB
-    // recommended something that does not fit on a 24 GB card. Quality Q8 is
-    // 12.8 GB, balanced 9.8 GB, light 7.7 GB, and each needs room above that
-    // for activations, so every tier is set above the set it installs. Minimal
-    // is 6.5 GB, and the engine only ever holds the language model with the
-    // depth decoder at its peak (5.0 GB here), so an 8 GB card runs it.
-    let recommended = if total_vram_gb >= 30.0 {
-        "native-full"
-    } else if total_vram_gb >= 15.0 {
-        "native-quality"
-    } else if total_vram_gb >= 11.5 {
-        "native-balanced"
-    } else if total_vram_gb >= 9.5 {
-        "native-efficient"
-    } else if total_vram_gb >= 7.0 {
-        "native-minimal"
-    } else {
-        "full-openrouter"
-    };
+    let fits = |id: &str| total_ram_gb >= ram_needed_gb(id, weights_bytes(id), total_vram_gb);
+    let recommended = VRAM_TIERS
+        .iter()
+        .filter(|(preset, _, _)| *preset != FULL_WEIGHTS_PRESET)
+        .find(|(_, id, tier)| total_vram_gb >= *tier && fits(id))
+        .map(|(preset, _, _)| *preset)
+        .unwrap_or("full-openrouter");
     let title = PRESETS.iter().find(|preset| preset.id == recommended).expect("recommendation must name a declared preset").title;
-    (recommended, format!("{gpu_name} with {total_vram_gb:.1} GB VRAM matches {title}"))
+    (recommended, format!("{gpu_name} with {total_vram_gb:.1} GB VRAM and {total_ram_gb:.0} GB of memory matches {title}"))
 }
 
 /// Chooses the complete local set on a clean install. This only records a
@@ -393,19 +415,22 @@ mod tests {
         assert_eq!(serde_json::to_value(&configuration).unwrap(), before);
     }
 
+    fn recommend(gpu: &str, vram: f64) -> &'static str {
+        recommend_for_hardware(gpu, vram, 64.0, crate::model_manager::profile_weights_bytes).0
+    }
+
     #[test]
     fn recommendation_matches_named_cards_and_real_music3_vram_tiers() {
-        // 31.8 GB is a 5090, and the only card the 26.6 GB native set fits on.
-        assert_eq!(recommend_for_hardware("NVIDIA GeForce RTX 5090", 31.8).0, "native-full");
-        // A 4090 has 24 GB and was being told to download 26.6 GB of weights.
-        assert_eq!(recommend_for_hardware("NVIDIA GeForce RTX 4090", 24.0).0, "native-quality");
-        assert_eq!(recommend_for_hardware("RTX 4080", 15.9).0, "native-quality");
-        assert_eq!(recommend_for_hardware("RTX 4070", 11.9).0, "native-balanced");
-        assert_eq!(recommend_for_hardware("RTX 4060 Ti", 10.0).0, "native-efficient");
-        assert_eq!(recommend_for_hardware("RTX 4060", 8.0).0, "native-minimal");
-        assert_eq!(recommend_for_hardware("RTX 3070 Laptop GPU", 7.6).0, "native-minimal");
-        assert_eq!(recommend_for_hardware("GTX 1660", 6.0).0, "full-openrouter");
-        assert_eq!(recommend_for_hardware("No NVIDIA GPU detected", 0.0).0, "full-openrouter");
+        // full weights are never recommended, even on a card they fit
+        assert_eq!(recommend("NVIDIA GeForce RTX 5090", 31.8), "native-quality");
+        assert_eq!(recommend("NVIDIA GeForce RTX 4090", 24.0), "native-quality");
+        assert_eq!(recommend("RTX 4080", 15.9), "native-quality");
+        assert_eq!(recommend("RTX 4070", 11.9), "native-balanced");
+        assert_eq!(recommend("RTX 4060 Ti", 10.0), "native-efficient");
+        assert_eq!(recommend("RTX 4060", 8.0), "native-minimal");
+        assert_eq!(recommend("RTX 3070 Laptop GPU", 7.6), "native-minimal");
+        assert_eq!(recommend("GTX 1660", 6.0), "full-openrouter");
+        assert_eq!(recommend("No NVIDIA GPU detected", 0.0), "full-openrouter");
     }
 
     /// The Light set is a speed compromise, so a card with room for more must
@@ -414,19 +439,28 @@ mod tests {
     #[test]
     fn capable_hardware_never_recommends_the_light_profile() {
         for vram in [12.0, 16.0, 20.0, 24.0, 32.0] {
-            let preset = recommend_for_hardware("NVIDIA test card", vram).0;
-            let profile = profile_for_preset(preset);
+            let profile = profile_for_preset(recommend("NVIDIA test card", vram));
             assert_ne!(profile, "recommended-light", "{vram} GB must not select the Light set");
             assert!(crate::model_manager::profile_exists(profile));
         }
-        assert_eq!(profile_for_preset(recommend_for_hardware("NVIDIA test card", 32.0).0), "native");
-        assert_eq!(profile_for_preset(recommend_for_hardware("NVIDIA test card", 24.0).0), "quality-q8");
-        assert_eq!(profile_for_preset(recommend_for_hardware("NVIDIA test card", 12.0).0), "balanced");
-        assert_eq!(profile_for_preset(recommend_for_hardware("NVIDIA test card", 10.0).0), "recommended-light");
-        assert_eq!(profile_for_preset(recommend_for_hardware("NVIDIA test card", 8.0).0), "minimal");
-        assert_eq!(profile_for_preset(recommend_for_hardware("No NVIDIA GPU detected", 0.0).0), "minimal");
+        assert_eq!(profile_for_preset(recommend("NVIDIA test card", 32.0)), "quality-q8");
+        assert_eq!(profile_for_preset(recommend("NVIDIA test card", 12.0)), "balanced");
+        assert_eq!(profile_for_preset(recommend("NVIDIA test card", 10.0)), "recommended-light");
+        assert_eq!(profile_for_preset(recommend("NVIDIA test card", 8.0)), "minimal");
+        assert_eq!(profile_for_preset(recommend("No NVIDIA GPU detected", 0.0)), "minimal");
     }
 
+    #[test]
+    fn a_set_needs_the_memory_too() {
+        let weights = crate::model_manager::profile_weights_bytes;
+        // on its card the set needs the system and the loading memory only
+        assert_eq!(ram_needed_gb("quality-q8", weights("quality-q8"), 16.0), 6.0);
+        // off the card its weights sit in memory with the buffers
+        assert!(ram_needed_gb("quality-q8", weights("quality-q8"), 8.0) > 18.0);
+        // a 16 GB card in a machine with 5 GB of memory is offered nothing local
+        assert_eq!(recommend_for_hardware("RTX 4080", 16.0, 5.0, weights).0, "full-openrouter");
+        assert_eq!(recommend_for_hardware("RTX 4080", 16.0, 8.0, weights).0, "native-quality");
+    }
 
     #[cfg(windows)]
     #[test]

@@ -26,6 +26,9 @@ Windows build.
 
 ### Fixed
 
+- The recommended model set fits the computer's memory as well as the card, and a set that needs
+  more memory than the computer has says so on the start screen; full BF16 weights are no longer
+  recommended, Q8 is near lossless at half the size (as in YuE2 Studio).
 - Audio to MIDI no longer needs CUDA 13: it runs on CUDA where the engine does and on the
   processor elsewhere (Pascal, AMD, Intel); the new package is fetched once into a folder of its
   own.
