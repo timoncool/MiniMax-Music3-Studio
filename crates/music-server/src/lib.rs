@@ -150,7 +150,7 @@ struct MmServerClient {
     http: reqwest::Client,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct CreateMusicJobRequest {
     /// The window's own mark for this request, handed back on the job so the
     /// window knows the job as its own before the response reaches it.
@@ -185,7 +185,7 @@ struct CreateMusicJobRequest {
 
 /// One adapter of a request: its folder and a strength per engine slot. A slot
 /// left out is not changed.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 struct AdapterUse {
     id: String,
     #[serde(default)]
@@ -281,6 +281,138 @@ struct MusicJob {
     playlist_id: Option<String>,
 }
 
+fn job_status_name(status: &MusicJobStatus) -> &'static str {
+    match status {
+        MusicJobStatus::Queued => "queued",
+        MusicJobStatus::Running => "running",
+        MusicJobStatus::Completed => "completed",
+        MusicJobStatus::Failed => "failed",
+        MusicJobStatus::Cancelled => "cancelled",
+    }
+}
+
+fn stored_job(job: &MusicJob, request: Value, attempt: u32) -> library::StoredJob {
+    library::StoredJob {
+        id: job.id.clone(),
+        submitted_at: job.submitted_at,
+        engine_id: job.engine_id.clone(),
+        title: job.title.clone(),
+        caption: job.caption.clone(),
+        lyrics: job.lyrics.clone(),
+        duration_seconds: job.duration_seconds,
+        playlist_id: job.playlist_id.clone(),
+        generation_settings: job.generation_settings.clone(),
+        request,
+        status: job_status_name(&job.status).into(),
+        message: job.message.clone(),
+        attempt,
+        resumed_as: None,
+    }
+}
+
+fn job_from_stored(stored: library::StoredJob, status: MusicJobStatus, message: String) -> MusicJob {
+    let (dispatch, phase) = match status {
+        MusicJobStatus::Failed => (MusicJobDispatch::Local, MusicJobPhase::Failed),
+        _ => (MusicJobDispatch::Cancelled, MusicJobPhase::Cancelled),
+    };
+    MusicJob {
+        derived: None,
+        id: stored.id,
+        client_ref: None,
+        submitted_at: stored.submitted_at,
+        engine_id: stored.engine_id,
+        cover_prompt: None,
+        title: stored.title,
+        status,
+        dispatch,
+        phase,
+        caption: stored.caption,
+        lyrics: stored.lyrics,
+        duration_seconds: stored.duration_seconds,
+        generation_settings: stored.generation_settings,
+        song: None,
+        songs: vec![],
+        message,
+        playlist_id: stored.playlist_id,
+    }
+}
+
+/// How many times a song is started again after the studio closed on it; a
+/// request that takes the engine down every time must not start for ever.
+const MAX_RESUMES: u32 = 3;
+
+/// Songs the studio was closed on are started again, oldest first. The old
+/// job stays as `cancelled`, its message naming the job that took its place.
+async fn resume_unfinished_jobs(state: AppState) {
+    // what ended without a result stays asked about, as it was left
+    match state.library.ended_music_jobs(200) {
+        Ok(ended) => {
+            let mut jobs = state.jobs.write().await;
+            for stored in ended {
+                let status = if stored.status == "failed" { MusicJobStatus::Failed } else { MusicJobStatus::Cancelled };
+                let message = stored.message.clone();
+                jobs.entry(stored.id.clone()).or_insert_with(|| job_from_stored(stored, status, message));
+            }
+        }
+        Err(error) => eprintln!("[ERROR] the songs that ended without a result could not be read: {error:#}"),
+    }
+    let cut_off = match state.library.unfinished_music_jobs() {
+        Ok(jobs) if !jobs.is_empty() => jobs,
+        Ok(_) => return,
+        Err(error) => {
+            eprintln!("[ERROR] the songs cut off by the last run could not be read: {error:#}");
+            return;
+        }
+    };
+    // the engine is started with the service and takes a while to answer; if
+    // it never does, the songs stay as they are for the next start
+    let mut ready = false;
+    for _ in 0..90 {
+        if state.music_server.props().await.is_ok() {
+            ready = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
+    if !ready {
+        eprintln!("[ERROR] the engine did not answer; {} cut-off song(s) were not started again", cut_off.len());
+        return;
+    }
+    for old in cut_off {
+        let (resumed_as, message) = if old.attempt >= MAX_RESUMES {
+            (None, format!("Cut off when the studio closed, and already started again {MAX_RESUMES} times; make it again by hand."))
+        } else if let Some(replay) = old.request.get("replay") {
+            match serde_json::from_value::<ReplayMusicJobRequest>(replay.clone()) {
+                Err(error) => (None, format!("Cut off when the studio closed; its request could not be read to start it again: {error}")),
+                Ok(mut request) => {
+                    request.client_ref = None;
+                    match submit_replay_job(state.clone(), request, old.attempt + 1).await {
+                        Ok((_, Json(job))) => (Some(job.id.clone()), format!("Cut off when the studio closed; started again as {}.", job.id)),
+                        Err((_, Json(error))) => (None, format!("Cut off when the studio closed; it could not be started again: {}", error.error)),
+                    }
+                }
+            }
+        } else {
+            match serde_json::from_value::<CreateMusicJobRequest>(old.request.clone()) {
+                Err(error) => (None, format!("Cut off when the studio closed; its request could not be read to start it again: {error}")),
+                Ok(mut request) => {
+                    request.client_ref = None;
+                    let (status, Json(job)) = submit_music_job(state.clone(), request, old.attempt + 1).await;
+                    if status == StatusCode::ACCEPTED {
+                        (Some(job.id.clone()), format!("Cut off when the studio closed; started again as {}.", job.id))
+                    } else {
+                        (None, format!("Cut off when the studio closed; it could not be started again: {}", job.message))
+                    }
+                }
+            }
+        };
+        if let Err(error) = state.library.cancel_cut_off_music_job(&old.id, resumed_as.as_deref(), &message) {
+            eprintln!("[ERROR] a cut-off song could not be marked: {error:#}");
+        }
+        state.jobs.write().await.insert(old.id.clone(), job_from_stored(old, MusicJobStatus::Cancelled, message));
+    }
+}
+
 fn unix_millis() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |since| since.as_millis() as u64)
 }
@@ -347,7 +479,7 @@ struct ApplyPresetRequest {
     id: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct ReplayMusicJobRequest {
     song_id: Option<String>,
     replay_request: Option<Value>,
@@ -706,6 +838,7 @@ pub async fn serve() -> anyhow::Result<()> {
     processing::clear_workspace(state.library.media_dir());
     state.training.recover();
     prepare::resume(&state);
+    tokio::spawn(resume_unfinished_jobs(state.clone()));
     {
         let state = state.clone();
         // both rewrite the tags of stored tracks, so one after the other
@@ -6772,8 +6905,14 @@ fn describes_exhausted_memory(log: &str) -> bool {
 
 async fn create_music_job(
     State(state): State<AppState>,
-    Json(mut request): Json<CreateMusicJobRequest>,
+    Json(request): Json<CreateMusicJobRequest>,
 ) -> (StatusCode, Json<MusicJob>) {
+    submit_music_job(state, request, 0).await
+}
+
+/// Sends a request to the engine and keeps it; `attempt` counts the times it
+/// was started again after the studio closed on it.
+async fn submit_music_job(state: AppState, mut request: CreateMusicJobRequest, attempt: u32) -> (StatusCode, Json<MusicJob>) {
     let music_selection = state.configuration.read().await.selections.iter().find(|selection| selection.capability == Capability::MusicGeneration).cloned();
     if music_selection.as_ref().is_some_and(|selection| selection.mode == ExecutionMode::OpenRouter) {
         return create_openrouter_music_job(state, request, music_selection.and_then(|selection| selection.cloud_model)).await;
@@ -6800,6 +6939,7 @@ async fn create_music_job(
         Ok(value) => value,
         Err(error) => return (StatusCode::BAD_REQUEST, Json(failed_request_job(request, engine_id, error))),
     };
+    let stored_request = serde_json::to_value(&request).unwrap_or(Value::Null);
     let _using = state.engine_use.read().await;
     let text = |field: &str| mm_request.get(field).and_then(Value::as_str).unwrap_or_default().to_owned();
     if let Ok(tokens) = state.music_server.tokenize(&text("caption"), &text("lyrics")).await {
@@ -6830,6 +6970,10 @@ async fn create_music_job(
                 playlist_id: request.playlist_id.clone(),
             };
             state.jobs.write().await.insert(job.id.clone(), job.clone());
+            // kept at once, so a song the studio is closed on is not lost
+            if let Err(error) = state.library.save_music_job(&stored_job(&job, stored_request, attempt)) {
+                eprintln!("[ERROR] the song's request could not be kept: {error:#}");
+            }
             spawn_job_watcher(state.clone(), job.id.clone());
             (StatusCode::ACCEPTED, Json(job))
         }
@@ -6895,6 +7039,11 @@ async fn replay_music_job(
     State(state): State<AppState>,
     Json(request): Json<ReplayMusicJobRequest>,
 ) -> Result<(StatusCode, Json<MusicJob>), (StatusCode, Json<ApiError>)> {
+    submit_replay_job(state, request, 0).await
+}
+
+/// Sends a re-render to the engine and keeps it, as a new song is kept.
+async fn submit_replay_job(state: AppState, request: ReplayMusicJobRequest, attempt: u32) -> Result<(StatusCode, Json<MusicJob>), (StatusCode, Json<ApiError>)> {
     if selected_local_music_engine(&*state.configuration.read().await).as_deref() != Some(PRIMARY_MUSIC_ENGINE_ID) {
         return Err(api_error(StatusCode::CONFLICT, "Replay synthesis requires the local minimaxmusic-cpp engine.".into()));
     }
@@ -6936,6 +7085,10 @@ async fn replay_music_job(
         }
     }
     state.jobs.write().await.insert(job.id.clone(), job.clone());
+    let stored_request = serde_json::json!({ "replay": serde_json::to_value(&request).unwrap_or(Value::Null) });
+    if let Err(error) = state.library.save_music_job(&stored_job(&job, stored_request, attempt)) {
+        eprintln!("[ERROR] the re-render's request could not be kept: {error:#}");
+    }
     spawn_job_watcher(state.clone(), job.id.clone());
     Ok((StatusCode::ACCEPTED, Json(job)))
 }
@@ -7155,6 +7308,22 @@ fn add_to_playlist(library: &library::Library, playlist_id: &str, songs: impl It
 /// in the library.
 fn spawn_job_watcher(state: AppState, job_id: String) {
     tokio::spawn(async move {
+        follow_job(&state, &job_id).await;
+        // however it ended, it is no longer one the studio's closing could cut off
+        let ended = state.jobs.read().await.get(&job_id).map(|job| (job_status_name(&job.status), job.message.clone()));
+        if let Some((status, message)) = ended {
+            // a song that reached the library needs no record of its request any more
+            let kept = if status == "completed" { state.library.forget_music_job(&job_id) } else { state.library.set_music_job_status(&job_id, status, &message) };
+            if let Err(error) = kept {
+                eprintln!("[ERROR] the song's state could not be kept: {error:#}");
+            }
+        }
+    });
+}
+
+async fn follow_job(state: &AppState, job_id: &str) {
+    let job_id = job_id.to_owned();
+    {
         let mut unreachable = 0u32;
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
@@ -7216,7 +7385,7 @@ fn spawn_job_watcher(state: AppState, job_id: String) {
                 apply_remote_status(job, &remote.status, failure);
             }
         }
-    });
+    }
 }
 
 async fn import_completed_mm_result(state: &AppState, job: &MusicJob, job_id: &str) -> anyhow::Result<Vec<CompletedSong>> {
@@ -7364,6 +7533,10 @@ async fn cancel_music_job(
         .get_mut(&job_id)
         .ok_or_else(|| api_error(StatusCode::NOT_FOUND, "Music job was not found.".into()))?;
     apply_remote_status(job, &remote.status, failure);
+    // kept at once: a studio closed right after the stop must not start the song again
+    if let Err(error) = state.library.set_music_job_status(&job_id, job_status_name(&job.status), &job.message) {
+        eprintln!("[ERROR] the stopped song's state could not be kept: {error:#}");
+    }
     Ok(Json(job.clone()))
 }
 

@@ -7,6 +7,9 @@ Windows build.
 
 ### Added
 
+- **Quitting asks first while a song is being made**, and stops it if you agree; a song the
+  studio was closed on is started again at the next start (up to three times), and one you stopped
+  stays stopped (as in YuE2 Studio).
 - **A note on every song, and its parameters** sent to the form, shown as JSON and saved to a
   file, as in ACE-Step Studio; reusing a song opens the studio form, where its fields are.
 - **Engine progress on the card**: the stage, its step counter and the time left.
