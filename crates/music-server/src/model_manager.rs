@@ -693,6 +693,19 @@ pub fn profile_exists(id: &str) -> bool {
     profiles().iter().any(|profile| profile.id == id && profile.installable && profile.backend == ENGINE_ID)
 }
 
+/// The declared set whose components are exactly these, whatever order they
+/// arrive in: picking every component of a set by hand is choosing that set.
+pub fn profile_matching(component_ids: &[String]) -> Option<&'static str> {
+    let mut wanted: Vec<&str> = component_ids.iter().map(String::as_str).collect();
+    wanted.sort_unstable();
+    wanted.dedup();
+    PROFILE_SETS.iter().find_map(|(id, _, _, components)| {
+        let mut declared = components.to_vec();
+        declared.sort_unstable();
+        (declared == wanted).then_some(*id)
+    })
+}
+
 fn profile(id: &'static str, label: &'static str, recommended: bool, ids: &[&'static str]) -> Profile {
     let all = components();
     let ram_needed_gb = crate::presets::ram_needed_gb(id, profile_weights_bytes(id), crate::presets::hardware().total_vram_gb);
@@ -749,6 +762,14 @@ fn q(id: &'static str, kind: &'static str, filename: &'static str, bytes: u64, s
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_component_of_a_set_picked_by_hand_is_that_set() {
+        let ids: Vec<String> = ["vocoder-f32", "dit-q8", "lm-q8", "condition-f32", "depth-q8"].map(String::from).to_vec();
+        assert_eq!(profile_matching(&ids), Some("quality-q8"));
+        let mixed: Vec<String> = ["vocoder-f32", "dit-q5", "lm-q8", "condition-f32", "depth-q8"].map(String::from).to_vec();
+        assert_eq!(profile_matching(&mixed), None, "a mix of two sets is a custom set");
+    }
 
     #[test]
     fn recommended_profile_is_a_complete_runnable_set() {
