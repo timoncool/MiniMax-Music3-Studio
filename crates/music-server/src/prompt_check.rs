@@ -70,12 +70,12 @@ fn has_sung_words(lyrics: &str) -> bool {
 fn names_vocal_gender(caption: &str) -> bool {
     const WORDS: &[&str] = &[
         "male", "female", "man", "woman", "men", "women", "boy", "girl", "baritone", "tenor", "soprano", "alto",
-        "mezzo", "contralto", "countertenor", "bass-baritone",
+        "mezzo", "contralto", "countertenor",
     ];
     const FRAGMENTS: &[&str] = &["мужск", "женск", "男", "女", "남성", "여성", "남자", "여자"];
     let lowered = caption.to_lowercase();
     lowered
-        .split(|c: char| !(c.is_alphanumeric() || c == '-'))
+        .split(|c: char| !c.is_alphanumeric())
         .any(|word| WORDS.contains(&word))
         || FRAGMENTS.iter().any(|fragment| lowered.contains(fragment))
 }
@@ -136,6 +136,7 @@ mod tests {
         };
         assert_eq!(codes("Synth-pop, warm pads", "[verse]\nneon", false), vec!["vocal_gender_missing"]);
         assert!(codes("Singer A (Male), a baritone", "[verse]\nneon", false).is_empty());
+        assert!(codes("female-led synthpop, male-fronted chorus", "[verse]\nneon", false).is_empty(), "a hyphenated gender names the singer");
         assert!(codes("a woman's breathy voice", "[verse]\nneon", false).is_empty());
         assert!(codes("Женский вокал", "[verse]\nneon", false).is_empty());
         assert!(codes("Synth-pop, romantic", "[verse]\n[chorus]", false).is_empty(), "no words, nothing to sing");

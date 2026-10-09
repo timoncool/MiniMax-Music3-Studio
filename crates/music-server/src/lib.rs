@@ -346,17 +346,9 @@ const MAX_RESUMES: u32 = 3;
 /// Songs the studio was closed on are started again, oldest first. The old
 /// job stays as `cancelled`, its message naming the job that took its place.
 async fn resume_unfinished_jobs(state: AppState) {
-    // what ended without a result stays asked about, as it was left
-    match state.library.ended_music_jobs(200) {
-        Ok(ended) => {
-            let mut jobs = state.jobs.write().await;
-            for stored in ended {
-                let status = if stored.status == "failed" { MusicJobStatus::Failed } else { MusicJobStatus::Cancelled };
-                let message = stored.message.clone();
-                jobs.entry(stored.id.clone()).or_insert_with(|| job_from_stored(stored, status, message));
-            }
-        }
-        Err(error) => eprintln!("[ERROR] the songs that ended without a result could not be read: {error:#}"),
+    // the window lists only songs in flight, so what ended without a result in an earlier run is not kept
+    if let Err(error) = state.library.forget_ended_music_jobs() {
+        eprintln!("[ERROR] the songs that ended without a result could not be cleared: {error:#}");
     }
     let cut_off = match state.library.unfinished_music_jobs() {
         Ok(jobs) if !jobs.is_empty() => jobs,
@@ -4670,11 +4662,14 @@ fn start_hub() -> Option<studio_hub_client::Hub> {
     } else {
         "other"
     };
-    let backend = match vendor {
-        "nvidia" => "cuda",
-        "apple" => "metal",
-        "none" => "cpu",
-        _ => "vulkan",
+    let backend = if cfg!(windows) && cuda_build::current().is_some() {
+        "cuda"
+    } else if cfg!(target_os = "macos") {
+        "metal"
+    } else if vendor == "none" {
+        "cpu"
+    } else {
+        "vulkan"
     };
     let os_label = format!(
         "{} {}",
@@ -6294,6 +6289,9 @@ async fn transcribe_to_midi(state: &AppState, size: &'static midi::Size, audio: 
         std::fs::create_dir_all(folder).with_context(|| format!("create {}", folder.display()))?;
     }
     let tool = state.midi.tool();
+    if !tool.is_file() {
+        anyhow::bail!("the Audio to MIDI transcriber is not part of this build ({}): it ships for Windows and macOS", tool.display());
+    }
     let device = midi_device(&*state.engine_options.read().await);
     let mut command = tokio::process::Command::new(&tool);
     command
@@ -7002,10 +7000,13 @@ async fn submit_music_job(state: AppState, mut request: CreateMusicJobRequest, a
     let stored_request = serde_json::to_value(&request).unwrap_or(Value::Null);
     let _using = state.engine_use.read().await;
     let text = |field: &str| mm_request.get(field).and_then(Value::as_str).unwrap_or_default().to_owned();
-    if let Ok(tokens) = state.music_server.tokenize(&text("caption"), &text("lyrics")).await {
-        if tokens > prompt_check::MAX_PROMPT_TOKENS {
+    match state.music_server.tokenize(&text("caption"), &text("lyrics")).await {
+        Ok(tokens) if tokens > prompt_check::MAX_PROMPT_TOKENS => {
             return (StatusCode::BAD_REQUEST, Json(failed_request_job(request, engine_id, prompt_check::too_long_message(tokens))));
         }
+        Ok(_) => {}
+        // the engine enforces the same budget at submit; only the friendlier message is lost
+        Err(error) => eprintln!("[ERROR] the prompt length was not counted before submitting: {error:#}"),
     }
     match state.music_server.submit(engine_submission(&mm_request)).await {
         Ok(remote) => {
@@ -7370,21 +7371,24 @@ fn spawn_job_watcher(state: AppState, job_id: String) {
     tokio::spawn(async move {
         follow_job(&state, &job_id).await;
         // however it ended, it is no longer one the studio's closing could cut off
-        let ended = state.jobs.read().await.get(&job_id).map(|job| (job_status_name(&job.status), job.message.clone(), job.songs.len()));
+        let ended = state.jobs.read().await.get(&job_id).map(|job| {
+            let profiles: Vec<String> = job.songs.iter().filter_map(|made| made.song.profile_id.clone()).collect();
+            (job_status_name(&job.status), job.message.clone(), job.songs.len(), profiles)
+        });
         if let Some(hub) = &state.hub {
-            match ended.as_ref().map(|(status, _, songs)| (*status, *songs)) {
-                Some(("completed", songs)) => {
-                    hub.count("songs", songs.max(1) as u64);
-                    if let Some(profile) = state.selected_profile_id.read().await.as_deref() {
+            match ended.as_ref().map(|(status, _, songs, profiles)| (*status, *songs, profiles)) {
+                Some(("completed", songs, profiles)) if songs > 0 => {
+                    hub.count("songs", songs as u64);
+                    for profile in profiles {
                         hub.used_model(profile);
                     }
                 }
-                Some(("failed", _)) => hub.count("song_failed", 1),
-                Some(("cancelled", _)) => hub.count("song_cancelled", 1),
+                Some(("failed", _, _)) => hub.count("song_failed", 1),
+                Some(("cancelled", _, _)) => hub.count("song_cancelled", 1),
                 _ => {}
             }
         }
-        if let Some((status, message, _)) = ended {
+        if let Some((status, message, _, _)) = ended {
             // a song that reached the library needs no record of its request any more
             let kept = if status == "completed" { state.library.forget_music_job(&job_id) } else { state.library.set_music_job_status(&job_id, status, &message) };
             if let Err(error) = kept {

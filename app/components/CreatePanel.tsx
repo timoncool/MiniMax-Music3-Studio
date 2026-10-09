@@ -337,7 +337,8 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
   const defaults = catalog?.defaults ?? {};
   const placeholder = (key: string) => (defaults[key] === undefined ? '' : String(defaults[key]));
   const caption = joinCaption(globalMetadata, vocalDetails, arrangement);
-  const promptCheck = usePromptCheck(caption, instrumental ? instrumentalLyrics(lyrics) : lyrics, instrumental).data;
+  const promptQuery = usePromptCheck(caption, instrumental ? instrumentalLyrics(lyrics) : lyrics, instrumental);
+  const promptCheck = promptQuery.data;
   const overBudget = promptCheck?.issues.some(issue => issue.code === 'prompt_too_long') === true;
 
   const profileLabel = useMemo(() => {
@@ -908,9 +909,9 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
               <>
                 <span
                   className={`rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums ${overBudget ? 'bg-rose-500/10 text-rose-600 dark:text-rose-300' : 'bg-zinc-200/70 text-zinc-500 dark:bg-white/10 dark:text-zinc-400'}`}
-                  title={promptCheck?.exact === false ? `${t('promptBudget')} — ${t('promptBudgetEstimated')}` : t('promptBudget')}
+                  title={promptQuery.error ? `${t('promptBudget')} — ${promptQuery.error.message}` : promptCheck?.exact === false ? `${t('promptBudget')} — ${t('promptBudgetEstimated')}` : t('promptBudget')}
                 >
-                  {t('promptBudgetShort')} {promptCheck ? `${promptCheck.exact ? '' : '≈'}${promptCheck.tokens} / ${promptCheck.limit}` : '…'}
+                  {t('promptBudgetShort')} {promptQuery.error ? '!' : promptCheck ? `${promptCheck.exact ? '' : '≈'}${promptCheck.tokens} / ${promptCheck.limit}` : '…'}
                 </span>
                 <button type="button" onClick={() => (assistantReady ? void layOutLyrics() : openAssistantSetup())} disabled={assistantReady && (assisting !== null || !lyrics.trim())} className={ICON} title={assistantReady ? t('formatLyrics') : t('setUpAssistant')}>
                   {assisting === 'sections' ? <Loader2 size={14} className="animate-spin" /> : <Tags size={14} />}

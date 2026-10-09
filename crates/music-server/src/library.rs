@@ -586,11 +586,17 @@ impl Library {
     }
 
     /// The newest jobs that ended without a result, failed or stopped.
+    #[cfg(test)]
     pub fn ended_music_jobs(&self, limit: usize) -> Result<Vec<StoredJob>> {
         let connection = self.connection.lock().unwrap();
         let mut statement = connection.prepare(&format!("SELECT {STORED_JOB_COLUMNS} FROM music_jobs WHERE status IN ('failed','cancelled') ORDER BY submitted_at DESC, id LIMIT ?1"))?;
         let jobs = statement.query_map([limit as i64], stored_job_row)?;
         Ok(jobs.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Drops the jobs that ended without a result: only the ones cut off by a closing are started again.
+    pub fn forget_ended_music_jobs(&self) -> Result<usize> {
+        Ok(self.connection.lock().unwrap().execute("DELETE FROM music_jobs WHERE status IN ('failed','cancelled')", [])?)
     }
 }
 
@@ -656,5 +662,7 @@ mod stored_job_tests {
         assert_eq!(ids, ["newer"]);
         reopened.forget_music_job("newer").unwrap();
         assert!(reopened.unfinished_music_jobs().unwrap().is_empty());
+        assert_eq!(reopened.forget_ended_music_jobs().unwrap(), 2);
+        assert!(reopened.ended_music_jobs(10).unwrap().is_empty());
     }
 }
