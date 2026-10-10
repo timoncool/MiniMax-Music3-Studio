@@ -693,6 +693,11 @@ pub fn profile_exists(id: &str) -> bool {
     profiles().iter().any(|profile| profile.id == id && profile.installable && profile.backend == ENGINE_ID)
 }
 
+/// The parts of a declared set, named in the statistics beside it.
+pub fn profile_components(profile_id: &str) -> Vec<String> {
+    PROFILE_SETS.iter().find(|set| set.0 == profile_id).map(|set| set.3.iter().map(|id| id.to_string()).collect()).unwrap_or_default()
+}
+
 /// The declared set whose components are exactly these, whatever order they
 /// arrive in: picking every component of a set by hand is choosing that set.
 pub fn profile_matching(component_ids: &[String]) -> Option<&'static str> {
