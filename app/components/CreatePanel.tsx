@@ -381,7 +381,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
     setLmTopK(asString('lm_top_k'));
     setDitCfg(asString('dit_cfg'));
     setMp3Bitrate(asString('mp3_bitrate'));
-    if (settings.output_format === 'mp3' || settings.output_format === 'flac') setFormat(settings.output_format);
+    if (settings.output_format === 'mp3' || settings.output_format === 'flac' || settings.output_format === 'wav32') setFormat(settings.output_format);
     // A song made without LoRA reuses without it, whatever was picked before.
     setAdapters(usesFromSettings(settings as Record<string, unknown>));
     // the song's fields live on the studio form; the simple one would show none of them
@@ -466,7 +466,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
       setSeed(asString(parsed.seed));
       setMp3Bitrate(asString(parsed.mp3_bitrate));
       if (typeof parsed.audio_codes === 'string') setAudioCodes(parsed.audio_codes);
-      if (parsed.output_format === 'mp3' || parsed.output_format === 'flac') setFormat(parsed.output_format);
+      if (parsed.output_format === 'mp3' || parsed.output_format === 'flac' || parsed.output_format === 'wav32') setFormat(parsed.output_format);
       if (Array.isArray(parsed.adapters)) setAdapters(usesFromSettings(parsed));
       setError(null);
     } catch {
@@ -682,7 +682,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
     const fields = (args.fields && typeof args.fields === 'object' ? args.fields : args) as Record<string, unknown>;
     // every field is checked before any changes, so a refused call leaves the form as it was
     const extra = ['caption', 'mode', 'instrumental', 'randomize_seed', 'adapters'];
-    const choices: Record<string, string[]> = { mode: ['studio', 'simple'], output_format: ['flac', 'mp3'] };
+    const choices: Record<string, string[]> = { mode: ['studio', 'simple'], output_format: ['flac', 'mp3', 'wav32'] };
     const unknown = Object.keys(fields).filter(key => !formFields[key] && !extra.includes(key));
     if (unknown.length) throw new Error(`Unknown fields: ${unknown.join(', ')}. The form has: ${[...Object.keys(formFields), ...extra].join(', ')}.`);
     for (const [key, allowed] of Object.entries(choices)) {
@@ -1067,6 +1067,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
                       <select value={format} onChange={event => setFormat(event.target.value as Music3Request['output_format'])} className={CONTROL}>
                         <option value="flac">FLAC</option>
                         <option value="mp3">MP3</option>
+                        <option value="wav32">WAV (32-bit float)</option>
                       </select>
                     </Field>
                   </div>

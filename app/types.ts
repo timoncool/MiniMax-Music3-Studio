@@ -112,7 +112,7 @@ export interface Music3Request {
   /** Flow-matching variations per song, 1..9. */
   synth_batch_size: number;
   dit_cfg: number;
-  output_format: 'flac' | 'mp3';
+  output_format: 'flac' | 'mp3' | 'wav32';
   mp3_bitrate: number;
   /** Library title only — never sent to the engine. */
   title?: string;
