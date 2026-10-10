@@ -217,6 +217,14 @@ fails and the installer says so. Install WebView2 from Microsoft's standalone in
 [Evergreen Standalone x64](https://go.microsoft.com/fwlink/p/?LinkId=2124701), then run the
 studio's installer again.
 
+### Linux (experimental)
+
+The .deb and the AppImage for Linux x86-64 are **experimental**. They come from the same code with the
+Linux build of the same engine (Vulkan, and the processor), but the author works on Windows and has not
+run them on a real Linux desktop. **If you live on Linux, it would be great if you polished them and sent
+the fixes back as a pull request.** The studio keeps its data in `~/.local/share/minimax-music3-studio`
+(`$XDG_DATA_HOME`).
+
 ## What runs where
 
 | Part | NVIDIA | AMD, Intel | No graphics card |
@@ -542,10 +550,11 @@ if it can find the key neither way. Model weights are never included in an insta
 
 ### macOS and Linux
 
-The studio also builds for Apple Silicon (Metal) and Linux x86-64 (Vulkan). The
-`macOS and Linux builds` workflow (`.github/workflows/release-unix.yml`) is started by hand,
-optionally with a release tag to attach the builds to; it makes the .dmg, the .deb and the
-AppImage with the scripts below.
+Linux packages are built on the release machine in an Ubuntu 24.04 container (Docker, under WSL on
+Windows): `scripts/build-linux-docker.sh <output folder>` builds the committed HEAD with
+`scripts/build-release-linux.sh` and checks that the engine starts. Only the .dmg is built on GitHub, by
+the `macOS build` workflow (`.github/workflows/release-unix.yml`, started by hand, optionally with a
+release tag to attach it to): there is no Mac on the release machine.
 
 On macOS (Xcode command line tools and CMake), the engine is built from the pinned commit with
 Metal, and again whenever `engines/minimaxmusic-cpp-source.json` moves to a new commit:
