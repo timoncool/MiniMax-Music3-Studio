@@ -381,6 +381,10 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
     setLmTopK(asString('lm_top_k'));
     setDitCfg(asString('dit_cfg'));
     setMp3Bitrate(asString('mp3_bitrate'));
+    // the song's own seeds, kept: the random switch would throw the sound seed away
+    setLmSeed(asString('lm_seed'));
+    setSeed(asString('seed'));
+    setRandomizeSeed(asString('seed') === '');
     if (settings.output_format === 'mp3' || settings.output_format === 'flac' || settings.output_format === 'wav32') setFormat(settings.output_format);
     // A song made without LoRA reuses without it, whatever was picked before.
     setAdapters(usesFromSettings(settings as Record<string, unknown>));
@@ -464,6 +468,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
       setDitCfg(asString(parsed.dit_cfg));
       setSynthBatch(asString(parsed.synth_batch_size));
       setSeed(asString(parsed.seed));
+      setRandomizeSeed(asString(parsed.seed) === '');
       setMp3Bitrate(asString(parsed.mp3_bitrate));
       if (typeof parsed.audio_codes === 'string') setAudioCodes(parsed.audio_codes);
       if (parsed.output_format === 'mp3' || parsed.output_format === 'flac' || parsed.output_format === 'wav32') setFormat(parsed.output_format);
