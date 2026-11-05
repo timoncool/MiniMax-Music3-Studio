@@ -2,6 +2,7 @@ import { NumberField } from './NumberField';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { libraryChanged, SELF_READ, setupStatusChanged, useActivity, useAssistantStatus, usePromptCheck, useSetupStatus, type ActivityEntry } from '../services/studioQueries';
 import { karaokeReason } from '../services/karaoke';
+import { clampDurationToKept } from '../services/createDuration';
 import { AlertTriangle, ChevronDown, CircleAlert, Dices, FolderOpen, Loader2, RotateCcw, Save, Sparkles, Square, Tags, Trash2, Wand2, Settings2, X } from 'lucide-react';
 import type { Music3Request, Playlist, Song } from '../types';
 import { useI18n } from '../context/I18nContext';
@@ -85,6 +86,17 @@ const keptDuration = (): string => {
     const kept = Number(window.localStorage.getItem('studio.createDuration'));
     return kept >= 10 && kept <= MAX_DURATION_SECONDS ? String(kept) : '';
   } catch { return ''; }
+};
+/** The duration to show when a request is loaded (a reused track, an example,
+ *  the writing assistant): the max-duration the user keeps for every new song is
+ *  not dropped below by a loaded (often short) request, but a longer one is
+ *  honoured (#184). With no kept maximum, the request's own value stands. */
+const loadedDuration = (asked: unknown): string => {
+  const value = typeof asked === 'number' ? asked : Number(asked);
+  const capped = Number.isFinite(value) ? Math.min(MAX_DURATION_SECONDS, value) : undefined;
+  const kept = keptDuration();
+  if (kept === '') return capped !== undefined ? String(Math.round(capped)) : '';
+  return String(clampDurationToKept(capped, Number(kept)));
 };
 /** The generation settings, kept across restarts like the words until Reset puts the defaults back. */
 const SETTINGS_KEY = 'studio.createSettings';
@@ -430,7 +442,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
     setLyrics(song.lyrics || '');
     const settings = (song.generationParams ?? {}) as EngineDefaults;
     const asString = (key: string) => (settings[key] === undefined ? '' : String(settings[key]));
-    setDuration(asString('duration'));
+    setDuration(loadedDuration(settings['duration']));
     setSteps(asString('steps'));
     setLmCfg(asString('lm_cfg'));
     setLmTopK(asString('lm_top_k'));
@@ -464,7 +476,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
     setVocalDetails(example.vocalDetails);
     setArrangement(example.arrangement);
     setLyrics(example.lyrics);
-    setDuration(String(example.duration));
+    setDuration(loadedDuration(example.duration));
     setName(example.name);
     setError(null);
   };
@@ -521,7 +533,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
         setArrangement(panes.arrangement);
       }
       if (typeof parsed.lyrics === 'string') setLyrics(parsed.lyrics);
-      setDuration(asString(parsed.duration ?? parsed.duration_seconds));
+      setDuration(loadedDuration(parsed.duration ?? parsed.duration_seconds));
       setSteps(asString(parsed.steps));
       setLmCfg(asString(parsed.lm_cfg));
       setLmTopK(asString(parsed.lm_top_k));
@@ -639,7 +651,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
       // The assistant wrote the sections, so it knows how long they take; the
       // form's 60 seconds is a default, not a decision anyone made.
       if (typeof body?.duration_seconds === 'number' && body.duration_seconds >= 10) {
-        setDuration(String(Math.min(360, Math.round(body.duration_seconds))));
+        setDuration(loadedDuration(body.duration_seconds));
       }
       // The tab stays where it was. Switching to Studio showed what the
       // assistant had written, but it moved the user off the screen they were
