@@ -33,9 +33,12 @@ struct Change {
 
 /// The table of changes of this release against 3.7.0. A release that changes what the studio downloads writes its
 /// own rows here; ONNX Runtime on the processor, HT-Demucs, MuScriptor and SheetSage2 on audio.cpp have their reasons
-/// in `REASONS` already and add their rows when they come.
+/// in `REASONS` already and add their rows when they come. More specific rows come first: `reason_of` takes the first
+/// that matches, so a CUDA library (audiocpp-cuda12-*/cuda13-*) gets its own reason before the server catch-all.
 const CHANGES: &[Change] = &[
     Change { what: "crisperwhisper-turbo*", reason: "crisperwhisper" },
+    Change { what: "audiocpp-cuda12-*", reason: "audiocpp-cuda" },
+    Change { what: "audiocpp-cuda13-*", reason: "audiocpp-cuda" },
     Change { what: "audiocpp-*", reason: "crisperwhisper" },
     Change { what: "transcribe-engine*", reason: "transcribe-avx2" },
     Change { what: "llama-*", reason: "llama" },
@@ -51,6 +54,7 @@ const CHANGES: &[Change] = &[
 /// Every reason, by its code, in English; the window says it in its own language by the code.
 pub const REASONS: &[(&str, &str)] = &[
     ("crisperwhisper", "Karaoke and the dataset lyrics are heard by CrisperWhisper 2.0 turbo in the audio.cpp server instead of Faster-Whisper, with a time for every word"),
+    ("audiocpp-cuda", "A CUDA library the audio.cpp engine needs on an NVIDIA card"),
     ("transcribe-avx2", "Built for every processor with AVX2: Parakeet no longer closes the studio on processors without AVX-512"),
     ("llama", "A newer llama.cpp for the assistant"),
     ("hotstep", "A newer build of HOT-Step's tools for training, captions and audio to MIDI"),
@@ -307,6 +311,16 @@ mod tests {
         assert_eq!(release_of("https://github.com/ggml-org/llama.cpp/releases/download/b11900/llama-b11900-bin-win-cuda-13.4-x64.zip"), "b11900");
         assert_eq!(release_of("https://huggingface.co/nyralabs/CrisperWhisper2.0_turbo/resolve/de0369c8a68025b7f6e86387b6eb5a3b369787c8/model.safetensors"), "de0369c8");
         assert_eq!(release_of("https://example.invalid/e.dll"), "e.dll");
+    }
+
+    #[test]
+    fn an_audiocpp_cuda_library_reads_differently_from_the_server() {
+        // #180: a CUDA library must not inherit the server's "heard by CrisperWhisper" reason.
+        assert_eq!(reason_of("audiocpp-cuda12-cufft", "newer"), "audiocpp-cuda");
+        assert_eq!(reason_of("audiocpp-cuda12-cudart", "newer"), "audiocpp-cuda");
+        assert_eq!(reason_of("audiocpp-cuda13-cufft", "newer"), "audiocpp-cuda");
+        assert_eq!(reason_of("audiocpp-cuda12", "newer"), "crisperwhisper");
+        assert_eq!(reason_of("audiocpp-vulkan", "newer"), "crisperwhisper");
     }
 
     #[test]

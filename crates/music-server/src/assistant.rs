@@ -119,6 +119,11 @@ pub struct AssistRequest {
     pub duration_seconds: f64,
     #[serde(default)]
     pub instrumental: bool,
+    /// The language the lyrics fall back to when the request does not settle
+    /// one: the text language the user chose, or the studio's UI locale under
+    /// "Automatic". Without it a small model defaults to Russian (#198).
+    #[serde(default)]
+    pub locale: String,
 }
 
 fn default_duration() -> f64 {
@@ -206,6 +211,11 @@ fn craft_notes(request: &AssistRequest) -> String {
     let mut notes = String::new();
     if matches!(request.target, AssistTarget::All | AssistTarget::Lyrics) && !request.instrumental {
         notes.push_str(DICTION_RULE);
+        if let Some(language) = locale_language(&request.locale) {
+            notes.push_str(&format!(
+                "\nDefault language: when the request does not make clear which language the lyrics should be sung in, write them in {language}."
+            ));
+        }
     }
     if request.instrumental {
         notes.push_str(INSTRUMENTAL_RULE);
@@ -213,6 +223,21 @@ fn craft_notes(request: &AssistRequest) -> String {
         notes.push_str(DUET_RULE);
     }
     notes
+}
+
+/// The lyrics language a locale names, for the fallback note. The frontend
+/// sends the studio's UI locale ("en", "ru", "zh", "ja", "ko") or the text
+/// language the user chose; a region suffix ("zh-CN") is ignored.
+fn locale_language(locale: &str) -> Option<&'static str> {
+    let code = locale.split(['-', '_']).next().unwrap_or("").trim().to_lowercase();
+    Some(match code.as_str() {
+        "en" => "English",
+        "ru" => "Russian",
+        "zh" => "Mandarin Chinese",
+        "ja" => "Japanese",
+        "ko" => "Korean",
+        _ => return None,
+    })
 }
 
 /// Whether the song has two singers, read from whatever the user wrote.
@@ -899,6 +924,7 @@ mod tests {
             arrangement: String::new(),
             duration_seconds: 60.0,
             instrumental: false,
+            locale: String::new(),
         };
         let (system, _) = super::instructions(&request);
         println!("system prompt: {} characters, {} reference blocks", system.len(), system.matches("--- reference").count());
@@ -920,6 +946,7 @@ mod tests {
             arrangement: String::new(),
             duration_seconds: 60.0,
             instrumental: false,
+            locale: String::new(),
         };
         let (system, _) = super::instructions(&request);
         assert!(system.contains("Reference captions from MiniMax"), "the skill's references are missing from the prompt");
@@ -941,6 +968,7 @@ mod tests {
             arrangement: String::new(),
             duration_seconds: 60.0,
             instrumental: false,
+            locale: String::new(),
         };
         let message = super::user_message(&request);
         assert!(!message.contains("60"), "the prompt still carries the default: {message}");
@@ -1011,6 +1039,7 @@ mod tests {
             arrangement: "Primary: synths".into(),
             duration_seconds: 90.0,
             instrumental: false,
+            locale: String::new(),
         }
     }
 
@@ -1098,6 +1127,7 @@ neon on the wet road"));
             arrangement: String::new(),
             duration_seconds: 60.0,
             instrumental: false,
+            locale: String::new(),
         };
         let (system, _) = super::instructions(&request);
         assert!(system.contains("language the user wrote their request in"));
@@ -1117,6 +1147,7 @@ neon on the wet road"));
             arrangement: String::new(),
             duration_seconds: 90.0,
             instrumental: false,
+            locale: String::new(),
         };
         let (system, _) = super::instructions(&request);
         assert!(system.contains("combining acute"), "nothing tells the model how to fix a stress");
@@ -1125,6 +1156,39 @@ neon on the wet road"));
 
     /// Two singers need rules a solo song must not see: told to a one-voice
     /// song, they would invite a second voice that nobody asked for.
+    #[test]
+    fn a_locale_sets_the_fallback_language_of_the_lyrics() {
+        assert_eq!(locale_language("zh"), Some("Mandarin Chinese"));
+        assert_eq!(locale_language("zh-CN"), Some("Mandarin Chinese"));
+        assert_eq!(locale_language("en"), Some("English"));
+        assert_eq!(locale_language(""), None);
+        assert_eq!(locale_language("xx"), None);
+
+        // a Chinese studio's autogen falls back to Chinese, not Russian (#198)
+        let mut chinese = request(AssistTarget::All);
+        chinese.locale = "zh".into();
+        let (system, _) = instructions(&chinese);
+        assert!(system.contains("Mandarin Chinese"));
+        assert!(system.contains("does not make clear which language"));
+
+        // the lyrics-only wand gets the same fallback
+        let lyrics_only = AssistRequest { target: AssistTarget::Lyrics, ..chinese.clone() };
+        assert!(instructions(&lyrics_only).0.contains("Mandarin Chinese"));
+
+        // no locale, no fallback note
+        assert!(!instructions(&request(AssistTarget::All)).0.contains("does not make clear which language"));
+
+        // an instrumental writes no words, so no fallback
+        let instrumental = AssistRequest { instrumental: true, ..chinese.clone() };
+        assert!(!instructions(&instrumental).0.contains("does not make clear which language"));
+
+        // the caption and sheet targets write no fresh lyrics, so no fallback
+        let prompt = AssistRequest { target: AssistTarget::Prompt, ..chinese.clone() };
+        assert!(!instructions(&prompt).0.contains("does not make clear which language"));
+        let sheet = AssistRequest { target: AssistTarget::Sheet, ..chinese };
+        assert!(!instructions(&sheet).0.contains("does not make clear which language"));
+    }
+
     #[test]
     fn the_duet_rules_arrive_only_for_two_voices() {
         let mut solo = request(AssistTarget::All);
