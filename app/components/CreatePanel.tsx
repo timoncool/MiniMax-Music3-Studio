@@ -293,7 +293,7 @@ const Pane: React.FC<{
 const NO_ACTIVITY: ActivityEntry[] = [];
 
 export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerating, activeJobCount = 0, initialData, playlists, onCreatePlaylist, playlistId, onChoosePlaylist }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
 
   const [name, setName] = useState(() => keptDraft().name ?? '');
   // The caption is three labelled panes, the way the model was trained and the
@@ -588,6 +588,9 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
         arrangement: arrangement.trim(),
         duration_seconds: numberOrUndefined(duration) ?? 60,
         instrumental,
+        // the studio's UI language, so an autogen that leaves the lyrics'
+        // language open falls back to it instead of Russian (#198)
+        locale: language,
       });
 
       // Watch the same request happen: the studio reports when it goes out,

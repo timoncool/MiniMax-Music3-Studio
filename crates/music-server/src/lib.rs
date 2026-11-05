@@ -3085,6 +3085,7 @@ async fn describe_training_item(
         arrangement: String::new(),
         duration_seconds: song.seconds,
         instrumental: song.instrumental,
+        locale: String::new(),
     };
     // A small local model now and then leaves a section out; it is asked once
     // more, then the failure is the user's to see.
