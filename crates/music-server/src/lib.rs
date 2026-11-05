@@ -672,8 +672,17 @@ impl EngineOptions {
         }
     }
 
+    /// The engine would run flash attention on a card ggml 0.27's kernels get
+    /// wrong (#194): a CUDA build on a Blackwell-or-newer compute capability.
+    /// The auto-off only ever adds the restriction; the user's own flash-
+    /// attention choice and every other card are untouched.
+    fn new_cuda_fa_regression(&self) -> bool {
+        self.cuda_build().is_some() && cuda_build::fa_regressed()
+    }
+
     fn to_engine(self) -> music_engine::mm_server::MmServerOptions {
         let cuda = self.cuda_build();
+        let new_cuda_fa_regression = self.new_cuda_fa_regression();
         music_engine::mm_server::MmServerOptions {
             backend: self.backend,
             keep_loaded: self.keep_loaded,
@@ -685,7 +694,7 @@ impl EngineOptions {
             // songs failed before it started.
             max_batch: Some(self.effective_max_batch()),
             max_seq: self.max_seq,
-            disable_flash_attention: self.disable_flash_attention,
+            disable_flash_attention: self.disable_flash_attention || new_cuda_fa_regression,
             split_cfg_forwards: self.split_cfg_forwards,
             // Off CUDA - Vulkan, where an AMD Radeon leaves the FP16 range
             // and renders silence, or the processor - and on CUDA cards before
@@ -4916,6 +4925,11 @@ fn put_the_engine_folder_on_path() {
 }
 
 fn engine_location(options: EngineOptions) -> music_engine::mm_server::MmServerLocation {
+    if options.new_cuda_fa_regression() {
+        music_engine::mm_server::note_in_log(
+            "flash-attention off: new CUDA compute capability, ggml 0.27 FA regression (#194)",
+        );
+    }
     // The environment still wins, so a developer build needs no settings: a
     // saved path is what is left when nothing is pinned from outside.
     let configured_executable = env::var_os("MINIMAX_MM_SERVER_BIN")
