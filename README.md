@@ -195,6 +195,10 @@ The same screens are in the interface language you read: [Русский](https:
 [한국어](https://timoncool.github.io/MiniMax-Music3-Studio/ko.html) — on the project page, or in
 [docs/screenshots](docs/screenshots).
 
+## Community reviews
+
+**Made a review or tutorial of MiniMax Music3 Studio?** Put a link to the project in the description — we feature the best ones on the [site](https://timoncool.github.io/MiniMax-Music3-Studio/) and here. Send yours through [Issues](https://github.com/timoncool/MiniMax-Music3-Studio/issues).
+
 ## What it needs
 
 Windows 10/11 x64 and an NVIDIA card **from the GTX 900 series on**. The studio ships two

@@ -17,4 +17,7 @@ export const STUDIO = {
   ],
   faq: { lora: 11, mcp: 14 },
   arch: "React UI ─┐\n          ├─ MiniMax Music3 Studio.exe   (window + native service)\nRust axum ┘        │\n                   └─ minimaxmusic.cpp `mm-server`  (C++/CUDA, GGUF)",
+  // No dedicated video reviews of this studio yet (only ComfyUI-model videos); the section invites the first.
+  reviewsFeatured: 6,
+  reviews: [],
 };
