@@ -209,7 +209,7 @@ pub fn accumulates_in_fp16() -> bool {
 
 /// Blackwell and newer (sm_100 = cc 10.0, sm_120 = cc 12.0): the compute
 /// capabilities ggml 0.27's flash-attention kernels sing gibberish on, later
-/// sections of a song turning to meaningless syllables (#194). Ada (8.9) and
+/// sections of a song turning to meaningless syllables. Ada (8.9) and
 /// Hopper (9.0) are unaffected. A threshold, not a card list, so a newer card
 /// stays on the safe path until its kernels are known good.
 pub fn fa_regressed() -> bool {
@@ -251,7 +251,7 @@ mod tests {
 
     #[test]
     fn flash_attention_is_regressed_from_blackwell_on() {
-        // ggml 0.27's flash attention sings gibberish on Blackwell-or-newer cards (#194)
+        // ggml 0.27's flash attention sings gibberish on Blackwell-or-newer cards
         assert!(!fa_regressed_cc(None));
         assert!(!fa_regressed_cc(Some((8, 9))), "Ada (RTX 4090) is unaffected");
         assert!(!fa_regressed_cc(Some((9, 0))), "Hopper is unaffected");

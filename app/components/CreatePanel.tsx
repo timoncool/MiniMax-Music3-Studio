@@ -91,7 +91,7 @@ const keptDuration = (): string => {
 /** The duration to show when a request is loaded (a reused track, an example,
  *  the writing assistant): the max-duration the user keeps for every new song is
  *  not dropped below by a loaded (often short) request, but a longer one is
- *  honoured (#184). With no kept maximum, the request's own value stands. */
+ *  honoured. With no kept maximum, the request's own value stands. */
 const loadedDuration = (asked: unknown): string => {
   const value = typeof asked === 'number' ? asked : Number(asked);
   const capped = Number.isFinite(value) ? Math.min(MAX_DURATION_SECONDS, value) : undefined;
@@ -637,7 +637,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
         duration_seconds: numberOrUndefined(duration) ?? 60,
         instrumental,
         // the studio's UI language, so an autogen that leaves the lyrics'
-        // language open falls back to it instead of Russian (#198)
+        // language open falls back to it instead of Russian
         locale: language,
       });
 

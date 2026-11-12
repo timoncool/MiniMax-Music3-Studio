@@ -121,7 +121,7 @@ pub struct AssistRequest {
     pub instrumental: bool,
     /// The language the lyrics fall back to when the request does not settle
     /// one: the text language the user chose, or the studio's UI locale under
-    /// "Automatic". Without it a small model defaults to Russian (#198).
+    /// "Automatic". Without it a small model defaults to Russian.
     #[serde(default)]
     pub locale: String,
 }
@@ -551,7 +551,7 @@ pub fn content_of(response: &Value) -> Result<String> {
 /// blocks, an unclosed one to the end, and - when the chat template opened
 /// the block itself and the model reasoned in plain text - everything before
 /// the last closing tag, which otherwise ended up in a song's style. As
-/// HOT-Step's stripThinkingBlocks (its #189).
+/// HOT-Step's stripThinkingBlocks.
 fn without_thinking(text: &str) -> String {
     use std::sync::LazyLock;
     static BLOCKS: LazyLock<regex::Regex> = LazyLock::new(|| {
@@ -1164,7 +1164,7 @@ neon on the wet road"));
         assert_eq!(locale_language(""), None);
         assert_eq!(locale_language("xx"), None);
 
-        // a Chinese studio's autogen falls back to Chinese, not Russian (#198)
+        // a Chinese studio's autogen falls back to Chinese, not Russian
         let mut chinese = request(AssistTarget::All);
         chinese.locale = "zh".into();
         let (system, _) = instructions(&chinese);

@@ -320,7 +320,7 @@ mod tests {
 
     #[test]
     fn the_audiocpp_engine_and_its_cuda_libraries_read_apart() {
-        // The server builds carry stems, karaoke and MIDI; the CUDA libraries are not the server (#180).
+        // The server builds carry stems, karaoke and MIDI; the CUDA libraries are not the server.
         for library in ["audiocpp-cuda12-cufft", "audiocpp-cuda12-cudart", "audiocpp-cuda13-cufft"] {
             assert_eq!(reason_of(library, "newer"), "audiocpp-cuda", "{library}");
         }

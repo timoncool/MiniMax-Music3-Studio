@@ -692,7 +692,7 @@ impl EngineOptions {
     }
 
     /// The engine would run flash attention on a card ggml 0.27's kernels get
-    /// wrong (#194): a CUDA build on a Blackwell-or-newer compute capability.
+    /// wrong: a CUDA build on a Blackwell-or-newer compute capability.
     /// The auto-off only ever adds the restriction; the user's own flash-
     /// attention choice and every other card are untouched.
     fn new_cuda_fa_regression(&self) -> bool {
@@ -6388,7 +6388,8 @@ async fn recognise_track(
 /// no separator to do it with, so the mix is all there is to hear.
 async fn separate_vocal_for_recognition(state: &AppState, mix: &std::path::Path) -> anyhow::Result<Option<std::path::PathBuf>> {
     let runtime = state.separation_config.read().await.runtime;
-    let gpu = roformer_on_card(state, runtime);
+    // the card is the trainer's while a LoRA trains: the vocal is lifted out on the processor then
+    let gpu = roformer_on_card(state, runtime) && state.training.active_run().await.is_none();
     if !state.separator.roformer_installed(gpu) {
         return Ok(None);
     }
@@ -6396,13 +6397,18 @@ async fn separate_vocal_for_recognition(state: &AppState, mix: &std::path::Path)
     let mix = mix.to_path_buf();
     let out = std::env::temp_dir().join(format!("minimax-karaoke-vocal-{}.wav", uuid::Uuid::now_v7()));
     let target = out.clone();
-    tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+    let separated = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
         let audio = audio_pcm::decode_stereo_44k(&mix)?;
         let (vocals, _instrumental) = separator.separate_roformer(&audio, gpu)?;
         separation::write_wav_stereo(&target, &vocals)
     })
     .await
-    .map_err(|error| anyhow::anyhow!("the vocal separator stopped: {error}"))??;
+    .map_err(|error| anyhow::anyhow!("the vocal separator stopped: {error}"))
+    .and_then(|outcome| outcome);
+    if let Err(error) = separated {
+        std::fs::remove_file(&out).ok();
+        return Err(error);
+    }
     Ok(Some(out))
 }
 
@@ -6418,12 +6424,16 @@ async fn karaoke_words(
     language: Option<String>,
 ) -> anyhow::Result<Vec<(f64, String)>> {
     let heard = recognise_track(state, config, mix.clone(), language.clone()).await;
-    let nothing_heard = heard.as_ref().err().is_some_and(|error| format!("{error:#}").contains(lyrics_sync::NO_WORDS));
-    if !nothing_heard {
+    if !heard.as_ref().err().is_some_and(nothing_heard) {
         return heard;
     }
-    let Some(vocal) = separate_vocal_for_recognition(state, &mix).await? else {
-        return heard;
+    let vocal = match separate_vocal_for_recognition(state, &mix).await {
+        Ok(Some(vocal)) => vocal,
+        Ok(None) => return heard,
+        Err(error) => {
+            studio_log!("[ERROR] the vocal was not lifted out for a second hearing: {error:#}");
+            return heard;
+        }
     };
     let retry = recognise_track(state, config, vocal.clone(), language).await;
     std::fs::remove_file(&vocal).ok();
@@ -6431,8 +6441,15 @@ async fn karaoke_words(
     // silent too, the track really has nothing sung and that answer stands.
     match retry {
         Ok(words) => Ok(words),
-        Err(_) => heard,
+        Err(error) if nothing_heard(&error) => heard,
+        Err(error) => Err(error),
     }
+}
+
+/// A recogniser that heard nothing to time, locally or in the cloud.
+fn nothing_heard(error: &anyhow::Error) -> bool {
+    let text = format!("{error:#}");
+    text.contains(lyrics_sync::NO_WORDS) || text.contains(lyrics_sync::NO_TIMINGS)
 }
 
 /// The words the chosen recogniser hears in a recording, each with its moment. A buried vocal is
@@ -6554,10 +6571,7 @@ async fn karaoke_words_from_openrouter(
     let response = execute_openrouter_json(request).await?;
     let segments = lyrics_sync::segments_from_verbose_json(&response.body);
     if segments.is_empty() {
-        // The model is chosen from the timings-capable family, so no segments means nothing was
-        // heard, not a bad model. Report it like the other recognisers (NO_WORDS) so the caller's
-        // buried-vocal pass fires for OpenRouter too.
-        anyhow::bail!("{}", lyrics_sync::NO_WORDS);
+        anyhow::bail!("{}", lyrics_sync::NO_TIMINGS);
     }
     Ok(segments)
 }
@@ -9718,6 +9732,16 @@ mod tests {
         assert!(missing.contains("number 1") && missing.contains("0: NVIDIA GeForce RTX 4090"), "{missing}");
         assert!(missing_chosen_card(Some(0), Some(&[])).expect("no card at all").contains("lists no NVIDIA card"));
         assert_eq!(missing_chosen_card(Some(7), None), None, "nvidia-smi did not answer: the card is not called gone");
+    }
+
+    /// A cloud answer without timed words gets the buried-vocal hearing as a local "no words" does, and is not the
+    /// "no words" that marks a dataset song instrumental.
+    #[test]
+    fn a_cloud_answer_without_timings_is_heard_again_but_not_called_instrumental() {
+        assert!(nothing_heard(&anyhow::anyhow!("{}", lyrics_sync::NO_WORDS)));
+        assert!(nothing_heard(&anyhow::anyhow!("{}", lyrics_sync::NO_TIMINGS)));
+        assert!(!nothing_heard(&anyhow::anyhow!("the recogniser stopped: out of memory")));
+        assert!(!lyrics_sync::NO_TIMINGS.contains(lyrics_sync::NO_WORDS), "dataset preparation tells them apart by NO_WORDS");
     }
 
     #[test]
