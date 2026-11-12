@@ -1871,7 +1871,8 @@ export const ru = {
     updateWhyOrtCpu: "Темп, тональность и пакет прослушивания работают на ONNX Runtime на процессоре",
     updateWhyOrtGpuGone: "ONNX Runtime больше не работает на видеокарте: его файлы CUDA, cuDNN и DirectML не читаются",
     updateWhyDemucsAudiocpp: "Стемы делит HT-Demucs в сервере audio.cpp",
-    updateWhyMidiAudiocpp: "Звук в MIDI переводят MuScriptor и SheetSage2 в сервере audio.cpp",
+    updateWhyHtdemucsOnnxGone: "Больше не нужно — HT-Demucs теперь работает в движке audio.cpp",
+    updateWhyMidiAudiocpp: "Звук в MIDI переводит MuScriptor в сервере audio.cpp",
     updateWhyNewer: "В этом релизе другая сборка",
     updateWhyUnused: "Больше не используется",
 };

@@ -1868,7 +1868,8 @@ export const zh = {
     updateWhyOrtCpu: "速度、调性和聆听包在处理器上的 ONNX Runtime 中运行",
     updateWhyOrtGpuGone: "ONNX Runtime 不再在显卡上运行；其 CUDA、cuDNN 和 DirectML 文件不再被读取",
     updateWhyDemucsAudiocpp: "分轨由 audio.cpp 服务器中的 HT-Demucs 完成",
-    updateWhyMidiAudiocpp: "音频转 MIDI 由 audio.cpp 服务器中的 MuScriptor 和 SheetSage2 完成",
+    updateWhyHtdemucsOnnxGone: "不再需要 —— HT-Demucs 现已在 audio.cpp 引擎中运行",
+    updateWhyMidiAudiocpp: "音频转 MIDI 由 audio.cpp 服务器中的 MuScriptor 完成",
     updateWhyNewer: "本次发布使用了它的另一个构建",
     updateWhyUnused: "不再使用",
 };

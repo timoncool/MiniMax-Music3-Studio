@@ -1872,7 +1872,8 @@ export const en = {
     updateWhyOrtCpu: "Tempo, key and the listening pack run on ONNX Runtime on the processor",
     updateWhyOrtGpuGone: "ONNX Runtime no longer runs on the card; its CUDA, cuDNN and DirectML files are not read",
     updateWhyDemucsAudiocpp: "Stems are split by HT-Demucs in the audio.cpp server",
-    updateWhyMidiAudiocpp: "Audio to MIDI runs MuScriptor and SheetSage2 in the audio.cpp server",
+    updateWhyHtdemucsOnnxGone: "No longer needed — HT-Demucs now runs in the audio.cpp engine",
+    updateWhyMidiAudiocpp: "Audio to MIDI runs MuScriptor in the audio.cpp server",
     updateWhyNewer: "This release uses another build of it",
     updateWhyUnused: "No longer used",
 };

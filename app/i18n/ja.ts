@@ -1868,7 +1868,8 @@ export const ja = {
   updateWhyOrtCpu: "テンポ・キー・リスニングパックはプロセッサ上の ONNX Runtime で動作します",
   updateWhyOrtGpuGone: "ONNX Runtime はグラフィックカードで動作しなくなり、その CUDA・cuDNN・DirectML ファイルは読み込まれません",
   updateWhyDemucsAudiocpp: "ステムは audio.cpp サーバーの HT-Demucs で分離されます",
-  updateWhyMidiAudiocpp: "オーディオから MIDI への変換は audio.cpp サーバーの MuScriptor と SheetSage2 で行います",
+  updateWhyHtdemucsOnnxGone: "不要になりました — HT-Demucs は audio.cpp エンジンで動作します",
+  updateWhyMidiAudiocpp: "オーディオから MIDI への変換は audio.cpp サーバーの MuScriptor で行います",
   updateWhyNewer: "このリリースでは別のビルドを使います",
   updateWhyUnused: "もう使われていません",
 };

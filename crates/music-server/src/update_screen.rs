@@ -64,7 +64,8 @@ pub const REASONS: &[(&str, &str)] = &[
     ("ort-cpu", "Tempo, key and the listening pack run on ONNX Runtime on the processor"),
     ("ort-gpu-gone", "ONNX Runtime no longer runs on the card; its CUDA, cuDNN and DirectML files are not read"),
     ("demucs-audiocpp", "Stems are split by HT-Demucs in the audio.cpp server"),
-    ("midi-audiocpp", "Audio to MIDI runs MuScriptor and SheetSage2 in the audio.cpp server"),
+    ("htdemucs-onnx-gone", "No longer needed — HT-Demucs now runs in the audio.cpp engine"),
+    ("midi-audiocpp", "Audio to MIDI runs MuScriptor in the audio.cpp server"),
     ("newer", "This release uses another build of it"),
     ("unused", "No longer used"),
 ];
