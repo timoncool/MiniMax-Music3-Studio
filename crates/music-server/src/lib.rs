@@ -1746,8 +1746,9 @@ fn engine_stems(engine: separation::Engine) -> &'static [&'static str] {
     }
 }
 
-/// Whether Mel-Band RoFormer runs on the card: an NVIDIA card, a runtime choice other than the
-/// processor, and a cuBLAS 13 the CUDA build's loader finds - the engine's, or one on PATH.
+/// Whether Mel-Band RoFormer runs on the card: an NVIDIA card the CUDA 13 build runs on (its card and driver; a card or
+/// driver only CUDA 12 runs takes the processor build), a runtime choice other than the processor, and a cuBLAS 13
+/// the CUDA build's loader finds - the engine's, or one on PATH.
 fn roformer_on_card(state: &AppState, runtime: lyrics_sync::OnnxFlavour) -> bool {
     let found = |name: &str| {
         state.engine_runtime.library_dir().join(name).is_file()
@@ -1755,7 +1756,13 @@ fn roformer_on_card(state: &AppState, runtime: lyrics_sync::OnnxFlavour) -> bool
     };
     runtime != lyrics_sync::OnnxFlavour::Cpu
         && lyrics_sync::OnnxFlavour::Auto.uses_cuda()
+        && roformer_build_runs_on(cuda_build::card())
         && (!cfg!(windows) || engine_runtime::CUDA13_LIBRARIES.iter().all(|name| found(name)))
+}
+
+/// RoFormer's card build is CUDA 13 alone: a card or driver only CUDA 12 runs has no code in it.
+fn roformer_build_runs_on(line: Option<cuda_build::CudaBuild>) -> bool {
+    line == Some(cuda_build::CudaBuild::Cuda13)
 }
 
 /// The separator's files to download for its engine: HT-Demucs's model, or RoFormer's model and engine build.
@@ -10646,6 +10653,15 @@ mod tests {
         assert!(idle_unload_due(Some(long_ago), None, limit));
         assert!(!idle_unload_due(Some(long_ago), Some(long_ago), limit), "this spell is unloaded already");
         assert!(!idle_unload_due(Some(std::time::Instant::now()), None, limit), "a song just ended");
+    }
+
+    /// RoFormer goes on the card only where its CUDA 13 build runs; a card or driver only CUDA 12 runs - Maxwell to
+    /// Volta, a driver older than 580 - and a machine without an NVIDIA card take the processor build.
+    #[test]
+    fn roformer_takes_the_card_only_where_its_cuda13_build_runs() {
+        assert!(roformer_build_runs_on(Some(cuda_build::CudaBuild::Cuda13)));
+        assert!(!roformer_build_runs_on(Some(cuda_build::CudaBuild::Cuda12)), "GTX 1080 or a driver older than 580");
+        assert!(!roformer_build_runs_on(None), "no NVIDIA card");
     }
 
     /// Extra launch arguments are kept as typed and reach the engine last,
