@@ -1926,7 +1926,7 @@ export const zh = {
     updateWhyCublasWheel: "同样的 cuBLAS 12.9，现在来自 NVIDIA 的软件包，并固定了校验和",
     updateWhyFasterWhisperGone: "Faster-Whisper 已被 CrisperWhisper 取代",
     updateWhyParakeetOnnxGone: "Parakeet 在 transcribe.cpp 上运行，这些 ONNX 模型不再被读取",
-    updateWhyOrtCpu: "歌曲的速度和调性在处理器上测量，三分钟的歌曲约需 4.5 秒",
+    updateWhyOrtCpu: "歌曲的速度和调性在处理器上测量，每首 4.5 到 6 秒",
     updateWhyOrtGpuGone: "ONNX Runtime 不再在显卡上运行；其 CUDA、cuDNN 和 DirectML 文件不再被读取",
     updateWhyDemucsAudiocpp: "分轨由 audio.cpp 服务器中的 HT-Demucs 完成",
     updateWhyHtdemucsOnnxGone: "不再需要 —— HT-Demucs 现已在 audio.cpp 引擎中运行",

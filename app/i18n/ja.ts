@@ -1926,7 +1926,7 @@ export const ja = {
   updateWhyCublasWheel: "同じ cuBLAS 12.9 を、チェックサムを固定した NVIDIA のパッケージから取得します",
   updateWhyFasterWhisperGone: "Faster-Whisper は CrisperWhisper に置き換えられました",
   updateWhyParakeetOnnxGone: "Parakeet は transcribe.cpp で動作し、これらの ONNX モデルはもう読み込まれません",
-  updateWhyOrtCpu: "曲のテンポとキーはプロセッサで測定され、3 分の曲で約 4.5 秒です",
+  updateWhyOrtCpu: "曲のテンポとキーはプロセッサで測定され、1 曲あたり 4.5〜6 秒です",
   updateWhyOrtGpuGone: "ONNX Runtime はグラフィックカードで動作しなくなり、その CUDA・cuDNN・DirectML ファイルは読み込まれません",
   updateWhyDemucsAudiocpp: "ステムは audio.cpp サーバーの HT-Demucs で分離されます",
   updateWhyHtdemucsOnnxGone: "不要になりました — HT-Demucs は audio.cpp エンジンで動作します",

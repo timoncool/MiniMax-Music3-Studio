@@ -1930,7 +1930,7 @@ export const en = {
     updateWhyCublasWheel: "The same cuBLAS 12.9, now from NVIDIA's package with its checksum pinned",
     updateWhyFasterWhisperGone: "Faster-Whisper is replaced by CrisperWhisper",
     updateWhyParakeetOnnxGone: "Parakeet runs on transcribe.cpp; these ONNX models are no longer read",
-    updateWhyOrtCpu: "The tempo and key of a song are measured on the processor, in about 4.5 seconds a three-minute song",
+    updateWhyOrtCpu: "The tempo and key of a song are measured on the processor, in 4.5 to 6 seconds a song",
     updateWhyOrtGpuGone: "ONNX Runtime no longer runs on the card; its CUDA, cuDNN and DirectML files are not read",
     updateWhyDemucsAudiocpp: "Stems are split by HT-Demucs in the audio.cpp server",
     updateWhyHtdemucsOnnxGone: "No longer needed — HT-Demucs now runs in the audio.cpp engine",

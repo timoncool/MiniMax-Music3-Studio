@@ -64,7 +64,7 @@ pub const REASONS: &[(&str, &str)] = &[
     ("cublas-wheel", "The same cuBLAS 12.9, now from NVIDIA's package with its checksum pinned"),
     ("faster-whisper-gone", "Faster-Whisper is replaced by CrisperWhisper"),
     ("parakeet-onnx-gone", "Parakeet runs on transcribe.cpp; these ONNX models are no longer read"),
-    ("ort-cpu", "The tempo and key of a song are measured on the processor, in about 4.5 seconds a three-minute song"),
+    ("ort-cpu", "The tempo and key of a song are measured on the processor, in 4.5 to 6 seconds a song"),
     ("ort-gpu-gone", "ONNX Runtime no longer runs on the card; its CUDA, cuDNN and DirectML files are not read"),
     ("demucs-audiocpp", "Stems are split by HT-Demucs in the audio.cpp server"),
     ("audiocpp-server", "The audio.cpp engine behind stem separation, karaoke and audio-to-MIDI"),
