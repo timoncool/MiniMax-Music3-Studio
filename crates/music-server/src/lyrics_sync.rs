@@ -1061,11 +1061,29 @@ pub fn align_lyrics_words(words: &[(f64, String)], lyrics: &str) -> Vec<TimedLin
 /// recogniser is used for *timing only*, which is what every karaoke aligner
 /// worth the name does. Its text is mistrusted: sung vocals are mis-heard
 /// constantly, and printing that back as lyrics is how karaoke ends up
-/// showing nonsense. Each written line claims the earliest recognised word
-/// that resembles it, scanning forward so a repeated chorus consumes its
-/// occurrences in order; lines nobody could place are filled in between their
-/// neighbours rather than dropped.
+/// showing nonsense. All lines are placed at once by a monotonic alignment
+/// that maximises how well they match overall: a line matched greedily to a
+/// later repeat of itself would strand every line sung in between, so a line
+/// that was not heard clearly is left out and filled in between its
+/// neighbours instead. A repeated chorus consumes its occurrences in order.
 pub fn align_lyrics(words: &[(f64, String)], lyrics: &str) -> Vec<(f64, String)> {
+    align_lyrics_with(words, lyrics, GAPS)
+}
+
+/// What the alignment pays for heard words it leaves without a line, as the
+/// gap penalty of a sequence alignment: a line placed past a sung stretch the
+/// text does not cover costs `per_word` for each word skipped, so leaping over
+/// a verse for a line matched only in part costs more than that match brings.
+/// `leading` counts the words before the first placed line as well.
+#[derive(Debug, Clone, Copy)]
+pub struct Gaps {
+    pub per_word: f64,
+    pub leading: bool,
+}
+
+pub const GAPS: Gaps = Gaps { per_word: 0.05, leading: true };
+
+pub fn align_lyrics_with(words: &[(f64, String)], lyrics: &str, gaps: Gaps) -> Vec<(f64, String)> {
     let lines: Vec<&str> = lyrics
         .lines()
         .map(str::trim)
@@ -1076,39 +1094,131 @@ pub fn align_lyrics(words: &[(f64, String)], lyrics: &str) -> Vec<(f64, String)>
     }
 
     let heard: Vec<(f64, String)> = words.iter().map(|(at, word)| (*at, normalise(word))).collect();
-    let mut placed: Vec<Option<f64>> = vec![None; lines.len()];
-    let mut cursor = 0usize;
+    let count = heard.len();
+    // How well each line matches when it starts at each recognised word; below
+    // the threshold a start is not a candidate at all.
+    let spans: Vec<usize> = lines
+        .iter()
+        .map(|line| line.split_whitespace().filter(|word| !normalise(word).is_empty()).count())
+        .collect();
+    let scores: Vec<Vec<f64>> = lines
+        .iter()
+        .zip(&spans)
+        .map(|(line, &span)| {
+            let written: String = line.split_whitespace().map(normalise).collect();
+            (0..count)
+                .map(|start| {
+                    if span == 0 {
+                        return 0.0;
+                    }
+                    // A little slack in length, because the recogniser splits
+                    // words differently from the page; each window is scored by
+                    // what it misses and what it adds, so starting a word early
+                    // costs as much as starting a word late.
+                    let score = (span.saturating_sub(1).max(1)..=span + 2)
+                        .filter(|length| start + length <= count)
+                        .map(|length| {
+                            let spoken: String = heard[start..start + length].iter().map(|(_, word)| word.as_str()).collect();
+                            dice(&written, &spoken)
+                        })
+                        .fold(0.0, f64::max);
+                    if score >= 0.45 { score } else { 0.0 }
+                })
+                .collect()
+        })
+        .collect();
 
-    for (index, line) in lines.iter().enumerate() {
-        let expected: Vec<String> = line.split_whitespace().map(|word| normalise(word)).filter(|word| !word.is_empty()).collect();
-        if expected.is_empty() {
-            continue;
-        }
-        let written = expected.concat();
-        let mut best: Option<(f64, usize, f64)> = None;
-        for start in cursor..heard.len() {
-            // A little slack either side: the recogniser splits words
-            // differently from the page.
-            let window = (start + expected.len() + 2).min(heard.len());
-            let spoken: String = heard[start..window].iter().map(|(_, word)| word.as_str()).collect();
-            let score = similarity(&written, &spoken);
-            if score > best.map(|(value, _, _)| value).unwrap_or(0.0) {
-                best = Some((score, start, heard[start].0));
+    // best[p]: the best (total, sum of placed line numbers, sum of starts) so
+    // far with the next line free to start at word p or later. Each line is
+    // either placed at some start >= p, which moves p past it, or left out. A
+    // clearly recognised line counts the same wherever it is heard best.
+    // Between equal totals the earlier lines of the text win - a verse written
+    // out more times than the song sings it is heard as its first copies, so
+    // the copies past the song stay unplaced - and then the earlier placement:
+    // a chorus the model sang twice in a row shows its lines as they are first
+    // sung, not where the recogniser heard them best.
+    let credit = |score: f64| if score >= 0.7 { 1.0 } else { score };
+    // (total, sum of placed line numbers, sum of starts, whether a line is placed yet)
+    type Kept = (f64, usize, usize, bool);
+    let better = |left: Kept, right: Kept| {
+        left.0 > right.0 + 1e-9 || ((left.0 - right.0).abs() <= 1e-9 && (left.1, left.2) < (right.1, right.2))
+    };
+    let mut best: Vec<Option<Kept>> = vec![None; count + 1];
+    best[0] = Some((0.0, 0, 0, false));
+    let mut back: Vec<Vec<(usize, Option<usize>)>> = Vec::with_capacity(lines.len());
+    for (index, &span) in spans.iter().enumerate() {
+        let mut next: Vec<Option<Kept>> = vec![None; count + 1];
+        let mut choice = vec![(0usize, None); count + 1];
+        for from in 0..=count {
+            let Some(so_far) = best[from] else { continue };
+            if next[from].is_none_or(|kept| better(so_far, kept)) {
+                next[from] = Some(so_far);
+                choice[from] = (from, None);
             }
-            // A line rarely starts far past where the previous one ended.
-            if start > cursor + 40 {
-                break;
+            if span == 0 {
+                continue;
+            }
+            for start in from..count {
+                let score = scores[index][start];
+                if score <= 0.0 {
+                    continue;
+                }
+                let after = (start + span).min(count);
+                let skipped = if so_far.3 || gaps.leading { start - from } else { 0 };
+                let total = (so_far.0 + credit(score) - gaps.per_word * skipped as f64, so_far.1 + index, so_far.2 + start, true);
+                if next[after].is_none_or(|kept| better(total, kept)) {
+                    next[after] = Some(total);
+                    choice[after] = (from, Some(start));
+                }
             }
         }
-        if let Some((score, start, at)) = best {
-            if score >= 0.45 {
-                placed[index] = Some(at);
-                cursor = (start + expected.len()).min(heard.len().saturating_sub(1));
-            }
-        }
+        best = next;
+        back.push(choice);
     }
 
-    interpolate(&lines, &mut placed, heard.first().map(|(at, _)| *at).unwrap_or(0.0), heard.last().map(|(at, _)| *at).unwrap_or(0.0));
+    let mut starts: Vec<Option<usize>> = vec![None; lines.len()];
+    let mut position = (0..=count).fold(0, |kept, candidate| match (best[candidate], best[kept]) {
+        (Some(offered), Some(held)) if better(offered, held) => candidate,
+        (Some(_), None) => candidate,
+        _ => kept,
+    });
+    for index in (0..lines.len()).rev() {
+        let (from, start) = back[index][position];
+        starts[index] = start;
+        position = from;
+    }
+
+    // A clearly recognised line was credited in full, so its start may sit as
+    // early as the first word it still matches from - a few sounds the
+    // recogniser heard before it count too; settle it where it matches best,
+    // between its neighbours and within its own length.
+    for index in 0..lines.len() {
+        let Some(start) = starts[index] else { continue };
+        let floor = starts[..index].iter().rev().flatten().next().map(|previous| previous + 1).unwrap_or(0);
+        let ceiling = starts[index + 1..].iter().flatten().next().copied().unwrap_or(count);
+        let low = start.saturating_sub(2).max(floor);
+        let high = (start + spans[index].max(2)).min(ceiling.saturating_sub(1)).min(count.saturating_sub(1));
+        let settled = (low..=high).fold(start, |kept, candidate| if scores[index][candidate] > scores[index][kept] { candidate } else { kept });
+        starts[index] = Some(settled);
+    }
+    let mut placed: Vec<Option<f64>> = starts.iter().map(|start| start.map(|start| heard[start].0)).collect();
+
+    // the words heard before the first placed line and after the last one: an
+    // edge gap is timed only when the recogniser heard enough there to sing it
+    let first_start = starts.iter().flatten().next().copied().unwrap_or(count);
+    let after_last = starts
+        .iter()
+        .zip(&spans)
+        .filter_map(|(start, &span)| start.map(|start| (start + span).min(count)))
+        .last()
+        .unwrap_or(0);
+    let edges = Edges {
+        before: first_start,
+        after: count - after_last.min(count),
+        first: heard.first().map(|(at, _)| *at).unwrap_or(0.0),
+        last: heard.last().map(|(at, _)| *at).unwrap_or(0.0),
+    };
+    interpolate(&lines, &mut placed, &edges);
     lines
         .iter()
         .zip(placed)
@@ -1117,8 +1227,12 @@ pub fn align_lyrics(words: &[(f64, String)], lyrics: &str) -> Vec<(f64, String)>
 }
 
 /// Lines the recogniser could not place are spread evenly between the ones it
-/// could, so a karaoke file has no silent holes.
-fn interpolate(lines: &[&str], placed: &mut [Option<f64>], first: f64, last: f64) {
+/// could, so a karaoke file has no silent holes. A gap before the first placed
+/// line or after the last one is timed only when the recogniser heard at least
+/// as many unmatched words there as the gap has lines - a first line sung
+/// unclearly keeps its place - and otherwise is not in the song as heard (a
+/// text longer than what was sung) and gets no time.
+fn interpolate(lines: &[&str], placed: &mut [Option<f64>], edges: &Edges) {
     let mut index = 0;
     while index < lines.len() {
         if placed[index].is_some() {
@@ -1129,13 +1243,31 @@ fn interpolate(lines: &[&str], placed: &mut [Option<f64>], first: f64, last: f64
         while index < lines.len() && placed[index].is_none() {
             index += 1;
         }
-        let before = gap_start.checked_sub(1).and_then(|previous| placed[previous]).unwrap_or(first);
-        let after = placed.get(index).copied().flatten().unwrap_or(last.max(before));
-        let steps = (index - gap_start + 1) as f64;
-        for (offset, slot) in placed[gap_start..index].iter_mut().enumerate() {
-            *slot = Some(before + (after - before) * ((offset + 1) as f64 / steps));
+        let gap = index - gap_start;
+        let before = gap_start.checked_sub(1).and_then(|previous| placed[previous]);
+        let after = placed.get(index).copied().flatten();
+        let (from, to, leading) = match (before, after) {
+            (Some(before), Some(after)) => (before, after, false),
+            (None, Some(after)) if edges.before >= gap => (edges.first, after, true),
+            (Some(before), None) if edges.after >= gap => (before, edges.last.max(before), false),
+            (None, None) if edges.before >= gap => (edges.first, edges.last, true),
+            _ => continue,
+        };
+        // a leading gap starts at the first word heard; any other one starts after the line before it
+        let (offset, steps) = if leading { (0.0, gap as f64) } else { (1.0, (gap + 1) as f64) };
+        for (position, slot) in placed[gap_start..index].iter_mut().enumerate() {
+            *slot = Some(from + (to - from) * ((position as f64 + offset) / steps));
         }
     }
+}
+
+/// What the recogniser heard outside the placed lines: how many words before
+/// the first one and after the last one, and the times of the first and last word.
+struct Edges {
+    before: usize,
+    after: usize,
+    first: f64,
+    last: f64,
 }
 
 /// A word without its last character, for tolerating inflected endings.
@@ -1146,6 +1278,16 @@ fn stem(word: &str) -> String {
 
 fn normalise(word: &str) -> String {
     word.chars().filter(|character| character.is_alphanumeric()).flat_map(char::to_lowercase).collect()
+}
+
+/// The characters two strings share in order, over both their lengths: 1 for
+/// the same text, lower for what either one misses or adds.
+fn dice(expected: &str, heard: &str) -> f64 {
+    let (left, right) = (expected.chars().count(), heard.chars().count());
+    if left + right == 0 {
+        return 0.0;
+    }
+    2.0 * similarity(expected, heard) * left as f64 / (left + right) as f64
 }
 
 /// How much of the written line the recogniser heard, compared character by
@@ -1295,6 +1437,107 @@ mod tests {
         ]);
         assert_eq!(lrc, "[00:00.00]neon on the glass\n[00:12.50]driving home\n[01:21.50]the engine dies\n");
         assert_eq!(parse_lrc_times(&lrc), vec![0.0, 12.5, 81.5]);
+    }
+
+    /// A chorus sung twice, heard worse the first time, and one of its lines
+    /// not heard at all: nothing may jump to the second chorus and strand the
+    /// verse sung in between.
+    #[test]
+    fn a_line_heard_better_later_does_not_strand_the_verse_before_it() {
+        let heard = |from: f64, text: &str| -> Vec<(f64, String)> {
+            text.split_whitespace().enumerate().map(|(i, w)| (from + i as f64 * 0.5, w.to_string())).collect()
+        };
+        let mut words = Vec::new();
+        words.extend(heard(1.0, "walking down the road tonight"));
+        words.extend(heard(10.0, "my truck talks back"));
+        words.extend(heard(13.0, "fast down the dusty track"));
+        words.extend(heard(16.0, "ive been part of it"));
+        words.extend(heard(20.0, "took my girl out on a friday"));
+        words.extend(heard(30.0, "my truck talks back"));
+        words.extend(heard(33.0, "down the dusty track"));
+        words.extend(heard(36.0, "feeling right tonight"));
+        let lyrics = "[Verse 1]\nWalking down the road tonight\n\n[Chorus]\nMy truck talks back\nDown the dusty track\nFeeling right tonight\n\n[Verse 2]\nTook my girl out on a Friday\n\n[Chorus]\nMy truck talks back\nDown the dusty track\nFeeling right tonight";
+        let lines = align_lyrics(&words, lyrics);
+        let at = |index: usize| lines[index].0;
+        assert_eq!(lines.len(), 8);
+        assert!((at(2) - 13.5).abs() < 0.6, "the first chorus keeps its own line: {lines:?}");
+        assert!(at(3) > at(2) && at(3) < at(4), "an unheard line sits between its neighbours: {lines:?}");
+        assert!((at(4) - 20.0).abs() < 0.6, "the second verse is where it was sung: {lines:?}");
+        assert!((at(6) - 33.0).abs() < 0.6 && (at(7) - 36.0).abs() < 0.6, "the second chorus is its own: {lines:?}");
+    }
+
+    /// A first line the recogniser heard but could not match keeps its place, from the first word heard.
+    #[test]
+    fn a_first_line_heard_unclearly_starts_at_the_first_word() {
+        let lyrics = "Neon fades along the lane\nFootsteps keep the time of rain\nFold the night and leave it here";
+        let mut words: Vec<(f64, String)> = vec![(5.0, "mmm".into()), (5.6, "ahh".into()), (6.2, "ooh".into())];
+        let mut at = 10.0;
+        for line in ["footsteps keep the time of rain", "fold the night and leave it here"] {
+            for word in line.split_whitespace() {
+                words.push((at, word.to_string()));
+                at += 0.5;
+            }
+            at += 1.0;
+        }
+        let lines = align_lyrics(&words, lyrics);
+        assert_eq!(lines.len(), 3, "{lines:?}");
+        assert_eq!((lines[0].0, lines[0].1.as_str()), (5.0, "Neon fades along the lane"));
+        assert_eq!(lines[1].0, 10.0, "{lines:?}");
+    }
+
+    /// A text that repeats its verse more times than the song sings it: the sung lines get their own times from the
+    /// first copies, and the copies past the song get no time at all instead of one shared point.
+    #[test]
+    fn a_text_longer_than_the_song_times_only_what_was_sung() {
+        let verse = ["neon fades along the lane", "footsteps keep the time of rain", "fold the night and leave it here", "morning has a sky to clear"];
+        let lyrics = (0..4).flat_map(|_| verse.iter()).copied().collect::<Vec<_>>().join("\n");
+        // the song sings the verse once and a half
+        let mut words: Vec<(f64, String)> = Vec::new();
+        let mut at = 10.0;
+        for line in verse.iter().chain(&verse[..2]) {
+            for word in line.split_whitespace() {
+                words.push((at, word.to_string()));
+                at += 0.5;
+            }
+            at += 1.0;
+        }
+        let lines = align_lyrics(&words, &lyrics);
+        assert_eq!(lines.len(), 6, "only the sung lines are timed: {lines:?}");
+        assert!(lines.windows(2).all(|pair| pair[0].0 < pair[1].0), "every sung line has its own time: {lines:?}");
+        assert_eq!(lines[0].0, 10.0);
+        let timed = align_lyrics_words(&words, &lyrics);
+        assert_eq!(timed.len(), 6);
+    }
+
+    /// Lines past the song stay without a time when nothing was heard after the last sung line, and when what was
+    /// heard there is fewer words than the lines.
+    #[test]
+    fn lines_past_the_song_get_no_time_from_a_few_stray_words() {
+        let sung = "neon fades along the lane";
+        let lyrics = std::iter::once(sung.to_string()).chain((0..68).map(|line| format!("extra line number {line} of the text"))).collect::<Vec<_>>().join("\n");
+        let mut words: Vec<(f64, String)> = sung.split_whitespace().enumerate().map(|(index, word)| (10.0 + index as f64 * 0.5, word.to_string())).collect();
+        assert_eq!(align_lyrics(&words, &lyrics).len(), 1, "no words after the sung line");
+        words.push((20.0, "yeah".into()));
+        words.push((21.0, "oh".into()));
+        assert_eq!(align_lyrics(&words, &lyrics).len(), 1, "two stray words do not time 68 lines");
+    }
+
+    #[test]
+    fn a_verse_whose_first_line_is_not_sung_stays_on_its_first_performance() {
+        // what Parakeet heard in en-A, a song that sings its verse twice, against a text whose first line it never sings
+        let words: Vec<(f64, String)> = include_str!("testdata/en-A-words.txt")
+            .lines()
+            .filter_map(|line| line.strip_prefix("W "))
+            .filter_map(|rest| {
+                let mut parts = rest.trim().splitn(2, ' ');
+                Some((parts.next()?.parse().ok()?, parts.next()?.trim().to_string()))
+            })
+            .collect();
+        assert_eq!(words.len(), 150);
+        let lines = align_lyrics(&words, include_str!("testdata/en-A-first-line-changed.txt"));
+        let starts: Vec<f64> = lines.iter().map(|(at, _)| *at).collect();
+        assert_eq!(starts, vec![11.76, 14.48, 17.28, 19.84, 22.88, 25.68], "{lines:?}");
+        assert_eq!(lines[1].1, "Footsteps keep the time of rain");
     }
 
     fn timed(words: &[(f64, &str)]) -> Vec<(f64, String)> {
