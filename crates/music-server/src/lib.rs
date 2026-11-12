@@ -22,6 +22,7 @@ mod cuda_build;
 #[cfg(windows)]
 mod dll_imports;
 mod diagnostics;
+mod problem;
 mod pin_sha;
 mod engine_runtime;
 mod subimport;
@@ -1298,6 +1299,8 @@ pub async fn serve() -> anyhow::Result<()> {
         .route("/v1/open-data-directory", post(open_data_directory))
         .route("/v1/diagnostics", get(diagnostics::get))
         .route("/v1/diagnostics/report", post(diagnostics::make_report))
+        .route("/v1/problem/preview", post(problem::preview))
+        .route("/v1/problem/report", post(problem::report))
         .route("/v1/diagnostics/report/reveal", post(diagnostics::reveal_report))
         .route("/v1/diagnostics/logs/reveal", post(diagnostics::reveal_logs))
         .route("/setup/select", post(setup_select))
