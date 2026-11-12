@@ -3007,6 +3007,9 @@ async fn card_free_for_training(state: &AppState) -> Result<(), String> {
 /// is a CUDA 13 build and computes on the card only: on the processor one run
 /// would take days.
 fn trainer_card_refusal() -> Option<String> {
+    if !cfg!(windows) {
+        return Some(TRAINING_NEEDS_WINDOWS.into());
+    }
     match cuda_build::current() {
         Some(cuda_build::CudaBuild::Cuda13) => None,
         Some(cuda_build::CudaBuild::Cuda12) => Some(format!(
@@ -3021,6 +3024,9 @@ fn trainer_card_refusal() -> Option<String> {
 /// "nvidia" on a machine with no CUDA card, "driver" where the card or its
 /// driver runs CUDA 12 only.
 fn trainer_card_needs() -> Option<&'static str> {
+    if !cfg!(windows) {
+        return Some("platform");
+    }
     match cuda_build::current() {
         Some(cuda_build::CudaBuild::Cuda13) => None,
         Some(cuda_build::CudaBuild::Cuda12) => Some("driver"),
@@ -3076,6 +3082,7 @@ async fn training_pack_download(state: &AppState) -> Option<downloads::DownloadP
 
 /// Why this machine does not train.
 const TRAINING_NEEDS_CUDA: &str = "training runs on an NVIDIA card with CUDA only, and this machine has none";
+const TRAINING_NEEDS_WINDOWS: &str = "training runs on Windows only: the trainer is a Windows build for NVIDIA cards";
 /// Why a run cannot start before the training pack is complete.
 const TRAINER_CUBLAS_MISSING: &str = "the training files are not downloaded yet: the trainer needs NVIDIA cuBLAS 13; download the training pack";
 
@@ -10082,6 +10089,14 @@ mod tests {
         counted.clear();
         assert_eq!(store_karaoke(|| Ok(()), |ended| counted.push(ended.map_err(str::to_string))), Ok(()));
         assert_eq!(counted, vec![Ok(())]);
+    }
+
+    /// The trainer is a Windows build: off Windows training is refused with that reason, before any download.
+    #[cfg(not(windows))]
+    #[test]
+    fn training_is_refused_off_windows() {
+        assert_eq!(trainer_card_refusal().as_deref(), Some(TRAINING_NEEDS_WINDOWS));
+        assert_eq!(trainer_card_needs(), Some("platform"));
     }
 
     /// A cloud answer without timed words gets the buried-vocal hearing as a local "no words" does, and is not the
