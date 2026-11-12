@@ -1,0 +1,229 @@
+[studio] ---- starting \\?\D:\Projects\TEMP\minimaxmusic.cpp\build-dev\mm-server.exe ----
+[Store] Created (policy=STRICT)
+[Registry] MiniMax-Music3-condition_encoder-F32.gguf -> mm3-cond
+[Registry] MiniMax-Music3-language_model-Q8_0.gguf -> mm3-lm
+[Registry] MiniMax-Music3-rvq_depth_decoder-Q8_0.gguf -> mm3-depth
+[Registry] MiniMax-Music3-transformer-Q8_0.gguf -> mm3-dit
+[Registry] MiniMax-Music3-vocoder-F32.gguf -> mm3-vae
+[BPE] Loaded from GGUF: 151675 vocab, 151387 merges
+[Server] mm-server 7fca80a (2026-09-24)
+[Server] Listening on 127.0.0.1:8086
+[Server] Models: 1 LM, 1 Depth, 1 Cond, 1 DiT, 1 VAE
+[Server] Job c5785b8b8d106143: {
+  "caption": "Global Metadata\nmonetochka. Basic Attributes: bpm is 105. Russian Indie Pop, Synth-Pop. Global Emotional Progression: Starts ironic and playful, turns quietly melancholic in the verses, and resolves in a catchy, bittersweet chorus. Sonics & Production Profile: Lo-fi synths over a dry drum machine, close and intimate, a little rough around the edges.\nVocal Details\nVocal Gender & Timbre: Singer A (Female), young, clear, slightly childlike timbre. Vocal Style: Conversational, half-spoken verses; a light melodic chorus. Vocal FX: Dry, close, a touch of room reverb.\nArrangement\nPrimary: a simple drum machine groove and a round synth bass. Secondary: a toy-like synth lead in the chorus and soft pads in the second verse.",
+  "lyrics": "[Verse 1]\nЯ забыла ключи в кармане чужого пальто\nВо дворе опять горит один фонарь на сто\nМы смеёмся громко, будто это не про нас\nБудто завтра не наступит в этот поздний час\n\n[Chorus]\nЛа-ла-ла, соседи спят, а мы не спим\nЛа-ла-ла, весь этот город только наш с тобой\nЛа-ла-ла, и если грустно, ну и пусть\nЯ выучила эту песню наизусть\n\n[Verse 2]\nВ телефоне тридцать три пропущенных звонка\nМама пишет: где ты, а я просто у ларька\nПокупаю жвачку, чипсы и чужой рассвет\nИ в кармане ничего, кроме конфет\n\n[Chorus]\nЛа-ла-ла, соседи спят, а мы не спим\nЛа-ла-ла, весь этот город только наш с тобой\nЛа-ла-ла, и если грустно, ну и пусть\nЯ выучила эту песню наизусть",
+  "duration": 90.0,
+  "seed": 777,
+  "lm_seed": 777,
+  "output_format": "wav32",
+  "lm_model": "MiniMax-Music3-language_model-Q8_0.gguf",
+  "depth_model": "MiniMax-Music3-rvq_depth_decoder-Q8_0.gguf",
+  "cond_model": "MiniMax-Music3-condition_encoder-F32.gguf",
+  "dit_model": "MiniMax-Music3-transformer-Q8_0.gguf",
+  "vae_model": "MiniMax-Music3-vocoder-F32.gguf"
+}
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 24563 MiB):
+  Device 0: NVIDIA GeForce RTX 4090, compute capability 8.9, VMM: yes, VRAM: 24563 MiB
+[Load] LM backend: CUDA0 (CPU threads: 16)
+[GGUF] \\?\F:\AI\MiniMax Music3 Studio\data\models\minimaxmusic-cpp\MiniMax-Music3-language_model-Q8_0.gguf: 399 tensors, data at offset 5346592
+[LM-Config] 36L, H=4096, V=200000, Nh=32, Nkv=8, D=128, tied=0
+[Qwen3] Attn: Q+K+V fused
+[Qwen3] MLP: gate+up fused
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/200-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/400-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/600-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-country/country_step1000_comfyui.safetensors: 432 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-metal/metal_step2000_comfyui.safetensors: 432 tensors
+[WeightCtx] Loaded 399 tensors, 8699.3 MB into backend
+[LM-KV] Allocated 2 sets x 36 layers (4D batched), 2880.0 MB
+[Store] Load LM: 4060 ms
+[GGUF] \\?\F:\AI\MiniMax Music3 Studio\data\models\minimaxmusic-cpp\MiniMax-Music3-rvq_depth_decoder-Q8_0.gguf: 47 tensors, data at offset 3520
+[Load] Depth backend: CUDA0 (shared)
+[WeightCtx] Loaded 47 tensors, 654.9 MB into backend
+[Depth] Loaded: 4 layers, dim 4096, 7 heads
+[Store] Load Depth: 305 ms
+[BPE] Loaded from GGUF: 151675 vocab, 151387 merges
+[Prompt] 467 tokens
+[AR] Prefill 116 ms, 467 tokens, CFG=1.50, top_k=50, songs=1
+[AR] Frame 0/2250
+[AR] Frame 100/2250
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/200-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/400-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/600-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-country/country_step1000_comfyui.safetensors: 432 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-metal/metal_step2000_comfyui.safetensors: 432 tensors
+[AR] Frame 200/2250
+[AR] Frame 300/2250
+[AR] Frame 400/2250
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/200-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/400-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/600-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-country/country_step1000_comfyui.safetensors: 432 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-metal/metal_step2000_comfyui.safetensors: 432 tensors
+[AR] Frame 500/2250
+[AR] Frame 600/2250
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/200-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/400-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/600-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-country/country_step1000_comfyui.safetensors: 432 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-metal/metal_step2000_comfyui.safetensors: 432 tensors
+[AR] Frame 700/2250
+[AR] Frame 800/2250
+[AR] Frame 900/2250
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/200-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/400-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/600-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-country/country_step1000_comfyui.safetensors: 432 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-metal/metal_step2000_comfyui.safetensors: 432 tensors
+[AR] Frame 1000/2250
+[AR] Frame 1100/2250
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/200-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/400-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/600-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-country/country_step1000_comfyui.safetensors: 432 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-metal/metal_step2000_comfyui.safetensors: 432 tensors
+[AR] Frame 1200/2250
+[AR] Frame 1300/2250
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/200-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/400-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/600-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-country/country_step1000_comfyui.safetensors: 432 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-metal/metal_step2000_comfyui.safetensors: 432 tensors
+[AR] Frame 1400/2250
+[AR] Frame 1500/2250
+[AR] Frame 1600/2250
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/200-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/400-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/600-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-country/country_step1000_comfyui.safetensors: 432 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-metal/metal_step2000_comfyui.safetensors: 432 tensors
+[AR] Frame 1700/2250
+[AR] Frame 1800/2250
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/200-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/400-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/600-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-country/country_step1000_comfyui.safetensors: 432 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-metal/metal_step2000_comfyui.safetensors: 432 tensors
+[AR] Frame 1900/2250
+[AR] Frame 2000/2250
+[AR] Frame 2100/2250
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/200-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/400-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/600-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-country/country_step1000_comfyui.safetensors: 432 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-metal/metal_step2000_comfyui.safetensors: 432 tensors
+[AR] Frame 2200/2250
+[AR] Song 0: 2250 frames (90.0s of music)
+[AR] 2250 frames total, 45.9 s (20.4 ms/frame)
+[Store] Unload Depth (654.9 MB)
+[Store] Unload LM (8699.3 MB)
+[GGUF] \\?\F:\AI\MiniMax Music3 Studio\data\models\minimaxmusic-cpp\MiniMax-Music3-condition_encoder-F32.gguf: 4 tensors, data at offset 640
+[Load] Cond backend: CUDA0 (CPU threads: 16)
+[Cond] Loaded: mix over 8 states, proj 4096 -> 2048
+[Store] Load Cond: 90 ms
+[GGUF] \\?\F:\AI\MiniMax Music3 Studio\data\models\minimaxmusic-cpp\MiniMax-Music3-transformer-Q8_0.gguf: 441 tensors, data at offset 31712
+[Load] DiT backend: CUDA0 (shared)
+[WeightCtx] Loaded 436 tensors, 2477.0 MB into backend
+[DiT] Loaded: 36 layers, dim 2048, flash_attn=1
+[Store] Load DiT: 1072 ms
+[GGUF] \\?\F:\AI\MiniMax Music3 Studio\data\models\minimaxmusic-cpp\MiniMax-Music3-vocoder-F32.gguf: 182 tensors, data at offset 12896
+[Load] VAE backend: CUDA0 (shared)
+[VAE] Backend: CUDA0, Weight buffer: 103.4 MB
+[VAE] Loaded: 4 blocks, upsample=512x, F32 activations
+[Store] Load VAE: 219 ms
+[DiT] Graph: 1200 nodes, T=689, B=2
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/200-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/400-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/600-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-country/country_step1000_comfyui.safetensors: 432 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-metal/metal_step2000_comfyui.safetensors: 432 tensors
+[DiT] Window 1/22: T=689, 30 steps, 2039 ms (68.0 ms/step)
+[DiT] Window 2/22: T=689, 30 steps, 1956 ms (65.2 ms/step)
+[DiT] Window 3/22: T=689, 30 steps, 1947 ms (64.9 ms/step)
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/200-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/400-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/600-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-country/country_step1000_comfyui.safetensors: 432 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-metal/metal_step2000_comfyui.safetensors: 432 tensors
+[DiT] Window 4/22: T=689, 30 steps, 1946 ms (64.9 ms/step)
+[DiT] Window 5/22: T=689, 30 steps, 1952 ms (65.1 ms/step)
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/200-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/400-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/600-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-country/country_step1000_comfyui.safetensors: 432 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-metal/metal_step2000_comfyui.safetensors: 432 tensors
+[DiT] Window 6/22: T=689, 30 steps, 1947 ms (64.9 ms/step)
+[DiT] Window 7/22: T=689, 30 steps, 1947 ms (64.9 ms/step)
+[DiT] Window 8/22: T=689, 30 steps, 1955 ms (65.2 ms/step)
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/200-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/400-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/600-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-country/country_step1000_comfyui.safetensors: 432 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-metal/metal_step2000_comfyui.safetensors: 432 tensors
+[DiT] Window 9/22: T=689, 30 steps, 1955 ms (65.2 ms/step)
+[DiT] Window 10/22: T=689, 30 steps, 1955 ms (65.2 ms/step)
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/200-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/400-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/600-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-country/country_step1000_comfyui.safetensors: 432 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-metal/metal_step2000_comfyui.safetensors: 432 tensors
+[DiT] Window 11/22: T=689, 30 steps, 1952 ms (65.1 ms/step)
+[DiT] Window 12/22: T=689, 30 steps, 1955 ms (65.2 ms/step)
+[DiT] Window 13/22: T=689, 30 steps, 1955 ms (65.2 ms/step)
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/200-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/400-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/600-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-country/country_step1000_comfyui.safetensors: 432 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-metal/metal_step2000_comfyui.safetensors: 432 tensors
+[DiT] Window 14/22: T=689, 30 steps, 1954 ms (65.1 ms/step)
+[DiT] Window 15/22: T=689, 30 steps, 1958 ms (65.3 ms/step)
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/200-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/400-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/600-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-country/country_step1000_comfyui.safetensors: 432 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-metal/metal_step2000_comfyui.safetensors: 432 tensors
+[DiT] Window 16/22: T=689, 30 steps, 1959 ms (65.3 ms/step)
+[DiT] Window 17/22: T=689, 30 steps, 1952 ms (65.1 ms/step)
+[DiT] Window 18/22: T=689, 30 steps, 1950 ms (65.0 ms/step)
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/200-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/400-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/600-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-country/country_step1000_comfyui.safetensors: 432 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-metal/metal_step2000_comfyui.safetensors: 432 tensors
+[DiT] Window 19/22: T=689, 30 steps, 1954 ms (65.1 ms/step)
+[DiT] Window 20/22: T=689, 30 steps, 1954 ms (65.1 ms/step)
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/200-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/400-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/600-01a0d21a/adapter_model.safetensors: 505 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-country/country_step1000_comfyui.safetensors: 432 tensors
+[Safetensors] D:\Projects\TEMP\mm3-dev-data\adapters/mm3-slider-metal/metal_step2000_comfyui.safetensors: 432 tensors
+[DiT] Window 21/22: T=689, 30 steps, 1957 ms (65.2 ms/step)
+[DiT] Graph: 1200 nodes, T=516, B=2
+[DiT] Window 22/22: T=516, 30 steps, 1446 ms (48.2 ms/step)
+[DiT] CFG=1.70, 22 windows, 42.6 s
+[VAE] Graph: 398 nodes, T_latent=689
+[VAE] Decoded: T_latent=689 -> T_audio=352768 (8.00s @ 44.1kHz)
+[VAE] Decoded: T_latent=689 -> T_audio=352768 (8.00s @ 44.1kHz)
+[VAE] Decoded: T_latent=689 -> T_audio=352768 (8.00s @ 44.1kHz)
+[VAE] Decoded: T_latent=689 -> T_audio=352768 (8.00s @ 44.1kHz)
+[VAE] Decoded: T_latent=689 -> T_audio=352768 (8.00s @ 44.1kHz)
+[VAE] Decoded: T_latent=689 -> T_audio=352768 (8.00s @ 44.1kHz)
+[VAE] Decoded: T_latent=689 -> T_audio=352768 (8.00s @ 44.1kHz)
+[VAE] Decoded: T_latent=689 -> T_audio=352768 (8.00s @ 44.1kHz)
+[VAE] Decoded: T_latent=689 -> T_audio=352768 (8.00s @ 44.1kHz)
+[VAE] Decoded: T_latent=689 -> T_audio=352768 (8.00s @ 44.1kHz)
+[VAE] Decoded: T_latent=689 -> T_audio=352768 (8.00s @ 44.1kHz)
+[VAE] Decoded: T_latent=689 -> T_audio=352768 (8.00s @ 44.1kHz)
+[VAE] Decoded: T_latent=689 -> T_audio=352768 (8.00s @ 44.1kHz)
+[VAE] Decoded: T_latent=689 -> T_audio=352768 (8.00s @ 44.1kHz)
+[VAE] Decoded: T_latent=689 -> T_audio=352768 (8.00s @ 44.1kHz)
+[VAE] Decoded: T_latent=689 -> T_audio=352768 (8.00s @ 44.1kHz)
+[VAE] Decoded: T_latent=689 -> T_audio=352768 (8.00s @ 44.1kHz)
+[VAE] Decoded: T_latent=689 -> T_audio=352768 (8.00s @ 44.1kHz)
+[VAE] Decoded: T_latent=689 -> T_audio=352768 (8.00s @ 44.1kHz)
+[VAE] Decoded: T_latent=689 -> T_audio=352768 (8.00s @ 44.1kHz)
+[VAE] Decoded: T_latent=689 -> T_audio=352768 (8.00s @ 44.1kHz)
+[VAE] Graph: 398 nodes, T_latent=516
+[VAE] Decoded: T_latent=516 -> T_audio=264192 (5.99s @ 44.1kHz)
+[VAE] Decode: 22 windows -> 90.1s of audio, 2313 ms
+[Done] 96.7 s total

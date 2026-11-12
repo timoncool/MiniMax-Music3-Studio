@@ -63,11 +63,38 @@ async fn report_of(state: &AppState, request: ProblemRequest) -> Result<ProblemR
     Ok(ProblemReport { kind, what: request.what, steps: given(request.steps), expected: given(request.expected), models, log })
 }
 
-/// The engine log's last lines, keys masked; the hub client cleans paths, addresses and ids before it leaves.
+/// The engine log's last lines without the text of any song, keys masked; the hub client cleans paths, addresses and
+/// ids before it leaves.
 fn engine_log_tail(state: &AppState) -> String {
     let lines = state.engine_log.lines().unwrap_or_else(|| music_engine::mm_server::startup_log_tail(LOG_LINES));
+    let lines = without_request_text(&lines);
     let tail = &lines[lines.len().saturating_sub(LOG_LINES)..];
     crate::studio_log::masked(&tail.join("\n"))
+}
+
+/// What stands where the engine printed what a person asked for.
+const LEFT_OUT: &str = "[request text left out]";
+
+/// The fields of the request body mm-server prints after `[Server] Job <id>: {` (`request_to_json`, one field a line)
+/// that hold what a person wrote; its numbers, models and adapters are the other fields.
+const TEXT_FIELDS: &[&str] = &["\"caption\":", "\"lyrics\":"];
+
+/// The engine's log with what a person wrote - the caption and lyrics of each request, and a word of them the
+/// tokenizer did not know (`[BPE] WARNING: unknown token '...'`) - replaced by one line [`LEFT_OUT`]; the request's
+/// seed, duration, models and adapters, loading, steps and errors stay. mm-server prints no other text of a request.
+pub fn without_request_text(lines: &[String]) -> Vec<String> {
+    let mut kept: Vec<String> = Vec::with_capacity(lines.len());
+    for line in lines {
+        let field = line.trim_start();
+        if TEXT_FIELDS.iter().any(|name| field.starts_with(name)) || line.starts_with("[BPE] WARNING: unknown token") {
+            if kept.last().map(String::as_str) != Some(LEFT_OUT) {
+                kept.push(LEFT_OUT.to_string());
+            }
+            continue;
+        }
+        kept.push(line.clone());
+    }
+    kept
 }
 
 fn hub_of(state: &AppState) -> Result<&Hub, (StatusCode, Value)> {
@@ -168,7 +195,7 @@ mod tests {
         let (hub, data) = hub_at(vec!["http://127.0.0.1:9".into()]);
         assert_eq!(file(&hub, report()).await.expect_err("no hub").1["code"], "unreachable");
         std::fs::remove_dir_all(&data).ok();
-        let (hub, data) = hub_answering(200, json!({ "number": 77, "url": "https://github.com/timoncool/MiniMax-Music3-Studio/issues/77", "token": "6f1c2a3b-0d4e-4f5a-8b6c-7d8e9f0a1b2c" })).await;
+        let (hub, data) = hub_answering(200, json!({ "number": 77, "url": "https://github.com/timoncool/MiniMax-Music3-Studio/issues/77" })).await;
         let filed = file(&hub, report()).await.expect("filed");
         assert_eq!((filed.number, filed.url.as_str()), (77, "https://github.com/timoncool/MiniMax-Music3-Studio/issues/77"));
         std::fs::remove_dir_all(&data).ok();
@@ -183,6 +210,38 @@ mod tests {
         assert_eq!(body["models"], "quality-q8");
         assert!(body["log"].as_str().is_some_and(|log| log.contains("line two")));
         assert_eq!(refusal(&hub.problem_body(&ProblemReport { what: "short".into(), ..report() }).unwrap_err()).1["code"], "field");
+        std::fs::remove_dir_all(&data).ok();
+    }
+
+    /// A real stretch of the engine's log - a song asked for with a caption and Russian lyrics, through its frames,
+    /// windows and decoding - leaves without its caption and lyrics, the request's numbers and models, the loading,
+    /// steps and the end in place, in the log the preview shows as in the one sent.
+    #[test]
+    fn the_log_that_leaves_carries_no_text_of_a_song() {
+        let lines: Vec<String> = include_str!("testdata/engine-log-with-song-text.log").lines().map(String::from).collect();
+        let song = ["Global Metadata", "Basic Attributes: bpm is 105", "Я забыла ключи в кармане", "[Chorus]", "Ла-ла-ла"];
+        let source = lines.join("\n");
+        assert!(song.iter().all(|text| source.contains(text)), "the stretch holds the song's text");
+        let kept = without_request_text(&lines);
+        let log = kept.join("\n");
+        for text in song {
+            assert!(!log.contains(text), "{text} left the studio");
+        }
+        assert_eq!(kept.iter().filter(|line| line.as_str() == LEFT_OUT).count(), 1, "caption and lyrics as one mark");
+        for line in ["[Server] Job c5785b8b8d106143: {", "\"duration\": 90.0", "\"seed\": 777", "\"dit_model\": \"MiniMax-Music3-transformer-Q8_0.gguf\"", "[AR] Frame 0/2250", "[DiT] Window 1/22", "[Done] 96.7 s total", "ggml_cuda_init: found 1 CUDA devices"] {
+            assert!(log.contains(line), "{line} stays");
+        }
+        assert_eq!(kept.len(), lines.len() - 1, "nothing else is taken out");
+        let tail_in_body = &lines[lines.iter().position(|line| line.trim_start().starts_with("\"lyrics\":")).unwrap()..];
+        assert_eq!(without_request_text(tail_in_body).first().map(String::as_str), Some(LEFT_OUT), "a tail that starts inside the request");
+        assert_eq!(without_request_text(&["[BPE] WARNING: unknown token 'ключи'".to_string(), "[Prompt] 467 tokens".to_string()]), [LEFT_OUT, "[Prompt] 467 tokens"]);
+        let failure: Vec<String> = ["CUDA error: out of memory", "  current device: 0, in function ggml_cuda_init at D:\\a\\ggml\\src\\ggml-cuda\\ggml-cuda.cu:254", "D:\\a\\ggml\\src\\ggml-cuda\\ggml-cuda.cu:111: CUDA error"].map(String::from).to_vec();
+        assert_eq!(without_request_text(&failure), failure, "an engine that fails at its start is reported whole");
+
+        let (hub, data) = hub_at(Vec::new());
+        let body = hub.problem_body(&ProblemReport { log: Some(log.clone()), ..report() }).unwrap();
+        let shown = body["log"].as_str().unwrap();
+        assert!(shown.contains("[Done] 96.7 s total") && !shown.contains("Я забыла ключи"));
         std::fs::remove_dir_all(&data).ok();
     }
 }
