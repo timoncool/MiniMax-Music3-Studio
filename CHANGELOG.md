@@ -16,6 +16,7 @@ Windows build.
 
 ### Fixed
 
+- **A song whose last stretch is short no longer crashes the engine on NVIDIA cards**: with the older ggml the engine could stop with "CUDA error: an illegal memory access was encountered" while rendering the song's last, shorter window, and the song was lost; on ggml 0.29 the same song with the same seed is made.
 - **A failed song names the engine's own reason again when the engine log holds a character that is not UTF-8**: one such byte - a caption or a path in the system's code page - made the studio read the whole log as empty, and the song failed with "the engine failed this job and its log names no cause". The log is now read past such bytes, so the FATAL or ERROR line is shown.
 
 ## 2026-11-06 — 3.8.5
