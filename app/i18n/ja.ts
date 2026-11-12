@@ -1391,7 +1391,7 @@ export const ja = {
     flashAttentionAuto: '自動',
     flashAttentionOn: 'オン',
     flashAttentionOff: 'オフ',
-    flashAttentionHint: '自動：RTX 50 以降のカードでだけオフになります。そこではオンだと歌が聞き取れなくなるためです。flash attention なしでは音楽の生成に約 1.5 倍の時間がかかります。',
+    flashAttentionHint: '自動：すべてのカードでオンです。曲の後半が意味のない音節になる場合はオフにしてください。flash attention なしでは音楽の生成に約 1.5 倍の時間がかかります。',
     cutShort: '途中で終了',
     cutShortMemory: '説明と歌詞が言語モデルの KV キャッシュを使いすぎたため、曲は {s} 秒と指定の長さより短くなりました。歌詞を短くするか、設定のエンジンで LM KV キャッシュを増やすか空欄にしてください。',
     diagnostics: '診断フラグ',

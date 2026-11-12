@@ -692,14 +692,6 @@ impl EngineOptions {
         }
     }
 
-    /// The engine would run flash attention on a card ggml 0.27's kernels get
-    /// wrong: a CUDA build on a Blackwell-or-newer compute capability.
-    /// The auto-off only ever adds the restriction; the user's own flash-
-    /// attention choice and every other card are untouched.
-    fn new_cuda_fa_regression(&self) -> bool {
-        self.cuda_build().is_some() && cuda_build::fa_regressed()
-    }
-
     /// Settings saved before the three-way choice said "off" with a switch.
     fn migrated(mut self) -> Self {
         if self.disable_flash_attention {
@@ -709,13 +701,11 @@ impl EngineOptions {
         self
     }
 
-    /// Why flash attention is off for this start, `None` when it is on.
+    /// Why flash attention is off for this start, `None` when it is on: Auto keeps it on on every card.
     fn flash_attention_off_reason(&self) -> Option<&'static str> {
         match self.flash_attention {
-            FlashAttention::On => None,
+            FlashAttention::On | FlashAttention::Auto => None,
             FlashAttention::Off => Some("chosen in Settings"),
-            FlashAttention::Auto if self.new_cuda_fa_regression() => Some("new CUDA compute capability, where flash attention sang nonsense (#194)"),
-            FlashAttention::Auto => None,
         }
     }
 
@@ -10456,6 +10446,9 @@ mod tests {
         assert!(!on.to_engine().disable_flash_attention, "On is passed even where Auto would turn it off");
         let cpu = EngineOptions { backend: music_engine::mm_server::ComputeBackend::Cpu, ..EngineOptions::default() };
         assert_eq!(cpu.flash_attention_off_reason(), None, "Auto keeps it on where nothing is known to go wrong");
+        let auto = EngineOptions { flash_attention: FlashAttention::Auto, ..EngineOptions::default() };
+        assert_eq!(auto.flash_attention_off_reason(), None, "Auto is on on every card, RTX 50 among them");
+        assert!(!auto.to_engine().disable_flash_attention);
     }
 
     #[test]

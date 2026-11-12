@@ -207,20 +207,6 @@ pub fn accumulates_in_fp16() -> bool {
     device().is_some_and(|(compute, _)| compute < (8, 0))
 }
 
-/// Blackwell and newer (sm_100 = cc 10.0, sm_120 = cc 12.0): the compute
-/// capabilities ggml 0.27's flash-attention kernels sing gibberish on, later
-/// sections of a song turning to meaningless syllables. Ada (8.9) and
-/// Hopper (9.0) are unaffected. A threshold, not a card list, so a newer card
-/// stays on the safe path until its kernels are known good.
-pub fn fa_regressed() -> bool {
-    fa_regressed_cc(device().map(|(compute, _)| compute))
-}
-
-/// Whether a compute capability is one ggml 0.27's flash attention gets wrong.
-pub fn fa_regressed_cc(compute: Option<(u32, u32)>) -> bool {
-    compute.is_some_and(|compute| compute >= (10, 0))
-}
-
 /// Why the engine cannot start on CUDA here, in words for the person at the
 /// machine.
 pub const UNSUPPORTED: &str = "CUDA was chosen, but this card or its driver runs neither CUDA build of the engine: it needs an NVIDIA card from the GTX 900 series on and driver 525 or newer. Update the NVIDIA driver, or choose Vulkan in Settings.";
@@ -247,16 +233,6 @@ mod tests {
         assert_eq!(parse_query("7.5, 581.29"), Some(((7, 5), 581)));
         assert_eq!(parse_query("12.0, 591.44"), Some(((12, 0), 591)));
         assert_eq!(parse_query("[N/A], 581.29"), None);
-    }
-
-    #[test]
-    fn flash_attention_is_regressed_from_blackwell_on() {
-        // ggml 0.27's flash attention sings gibberish on Blackwell-or-newer cards
-        assert!(!fa_regressed_cc(None));
-        assert!(!fa_regressed_cc(Some((8, 9))), "Ada (RTX 4090) is unaffected");
-        assert!(!fa_regressed_cc(Some((9, 0))), "Hopper is unaffected");
-        assert!(fa_regressed_cc(Some((10, 0))), "Blackwell sm_100");
-        assert!(fa_regressed_cc(Some((12, 0))), "Blackwell sm_120 (RTX 5060 Ti, #194)");
     }
 
     #[test]

@@ -1391,7 +1391,7 @@ export const ko = {
     flashAttentionAuto: '자동',
     flashAttentionOn: '켜짐',
     flashAttentionOff: '꺼짐',
-    flashAttentionHint: '자동: RTX 50 이상 카드에서만 꺼집니다. 그 카드에서는 켜면 노래가 알아들을 수 없게 나옵니다. flash attention 없이는 음악 생성에 약 1.5배 더 걸립니다.',
+    flashAttentionHint: '자동: 모든 카드에서 켜집니다. 노래 후반부가 의미 없는 음절로 바뀌면 꺼 주세요. flash attention 없이는 음악 생성에 약 1.5배 더 걸립니다.',
     cutShort: '잘림',
     cutShortMemory: '설명과 가사가 언어 모델의 KV 캐시를 너무 많이 차지해 곡이 {s}초로 지정한 길이보다 짧게 나왔습니다. 가사를 줄이거나 설정의 엔진에서 LM KV 캐시를 늘리거나 비우세요.',
     diagnostics: '진단 플래그',

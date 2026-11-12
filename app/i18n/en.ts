@@ -1396,7 +1396,7 @@ export const en = {
     flashAttentionAuto: 'Auto',
     flashAttentionOn: 'On',
     flashAttentionOff: 'Off',
-    flashAttentionHint: 'Auto: off only on RTX 50 and newer cards, where singing comes out garbled with it. Without flash attention the music takes about 1.5 times longer.',
+    flashAttentionHint: 'Auto: on, on every card. Turn it off if a song\'s later sections turn to meaningless syllables. Without flash attention the music takes about 1.5 times longer.',
     cutShort: 'Cut short',
     cutShortMemory: "The caption and lyrics took so much of the language model's KV cache that the song came out {s} s, shorter than its duration. Shorten the lyrics, or raise or clear the LM KV cache in Settings, Engine.",
     diagnostics: 'Diagnostic flags',
