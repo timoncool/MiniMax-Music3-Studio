@@ -744,11 +744,12 @@ fn part_path(path: &Path) -> PathBuf {
     PathBuf::from(value)
 }
 
-const PROFILE_SETS: [(&str, &str, bool, [&str; 5]); 6] = [
+const PROFILE_SETS: [(&str, &str, bool, [&str; 5]); 7] = [
     ("minimal", "Minimal - Q3_K_M / Q4_K_M / Q3_K_M (8 GB cards)", false, ["lm-q3", "depth-q4", "condition-f32", "dit-q3", "vocoder-f32"]),
     ("recommended-light", "Light - Q4_K_M / Q4_K_M / Q4_K_S (speed / low VRAM)", false, ["lm-q4", "depth-q4", "condition-f32", "dit-q4-s", "vocoder-f32"]),
     ("balanced", "Balanced - Q6_K / Q8_0 / Q5_K_M", false, ["lm-q6", "depth-q8", "condition-f32", "dit-q5", "vocoder-f32"]),
     ("quality-q8", "Recommended - Quality Q8_0", true, ["lm-q8", "depth-q8", "condition-f32", "dit-q8", "vocoder-f32"]),
+    ("quality-lm-nvfp4", "Quality, LM in NVFP4 - NVFP4 LM, Q8_0 depth decoder and DiT (CUDA 13 build; recommended on an RTX 50, which computes NVFP4 on its tensor cores)", false, ["lm-nvfp4", "depth-q8", "condition-f32", "dit-q8", "vocoder-f32"]),
     ("quality-nvfp4", "NVFP4 - LM, depth and DiT in NVFP4 (CUDA 13 build; an RTX 50 computes it on its tensor cores)", false, ["lm-nvfp4", "depth-nvfp4", "condition-f32", "dit-nvfp4", "vocoder-f32"]),
     ("native", "Full native - BF16 / F32 original weights", false, ["lm-bf16", "depth-bf16", "condition-f32", "dit-f32", "vocoder-f32"]),
 ];
@@ -919,7 +920,7 @@ mod tests {
         let with = catalog_for(true, &[]);
         assert!(with.profiles.iter().any(|profile| profile.id == "quality-nvfp4"));
         assert!(with.components.iter().any(|component| component.id == "dit-mxfp4"));
-        assert!(!with.profiles.iter().find(|profile| profile.id == "quality-nvfp4").unwrap().recommended, "no default yet");
+        assert!(!with.profiles.iter().find(|profile| profile.id == "quality-nvfp4").unwrap().recommended, "the full NVFP4 set is a choice, never the default");
     }
 
     #[test]

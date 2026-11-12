@@ -64,13 +64,13 @@ pub struct PresetView {
 pub fn list() -> Vec<PresetView> {
     PRESETS
         .iter()
-        .map(|preset| PresetView {
-            id: preset.id,
-            title: preset.title,
-            subtitle: preset.subtitle,
-            min_vram_gb: preset.min_vram_gb,
-            profile_id: preset.profile_id,
-            provider_mode: preset.provider_mode,
+        .map(|preset| {
+            let (profile_id, subtitle) = match preset.profile_id.map(on_this_card) {
+                Some((profile, Some(files))) => (Some(profile), files),
+                Some((profile, None)) => (Some(profile), preset.subtitle),
+                None => (None, preset.subtitle),
+            };
+            PresetView { id: preset.id, title: preset.title, subtitle, min_vram_gb: preset.min_vram_gb, profile_id, provider_mode: preset.provider_mode }
         })
         .collect()
 }
@@ -144,7 +144,7 @@ const WORK_RAM_GB: f64 = 2.0;
 /// weights live in video memory; otherwise they live in RAM with the buffers.
 pub fn ram_needed_gb(profile: &str, weights_bytes: u64, total_vram_gb: f64) -> f64 {
     // Apple Silicon's video memory is the system's own, so weights "on the card" still take the RAM
-    let on_card = !cfg!(target_os = "macos") && VRAM_TIERS.iter().any(|(_, id, tier)| *id == profile && total_vram_gb >= *tier);
+    let on_card = !cfg!(target_os = "macos") && vram_tier(profile).is_some_and(|tier| total_vram_gb >= tier);
     if on_card {
         SYSTEM_RAM_GB + LOADING_RAM_GB
     } else {
@@ -180,7 +180,7 @@ pub fn recommended_local_profile() -> &'static str {
 
 /// Maps a hardware preset onto the complete five-component profile it installs.
 pub fn profile_for_preset(preset_id: &str) -> &'static str {
-    match preset_id {
+    let profile = match preset_id {
         "native-full" => "native",
         "native-quality" => "quality-q8",
         "native-balanced" => "balanced",
@@ -189,8 +189,34 @@ pub fn profile_for_preset(preset_id: &str) -> &'static str {
         // A machine without enough local VRAM still needs a named local target
         // for the Model Manager: the smallest set is the one that can still run.
         _ => "minimal",
+    };
+    on_this_card(profile).0
+}
+
+/// The set a preset installs on this card, with the files it names: on an RTX 50 with the CUDA 13 build the quality
+/// set takes its language model in NVFP4, which its tensor cores compute directly.
+fn on_this_card(profile: &'static str) -> (&'static str, Option<&'static str>) {
+    fp4_sibling(profile, crate::cuda_build::computes_fp4_natively())
+}
+
+fn fp4_sibling(profile: &'static str, fp4_native: bool) -> (&'static str, Option<&'static str>) {
+    match profile {
+        "quality-q8" if fp4_native => ("quality-lm-nvfp4", Some("NVFP4 LM, Q8_0 depth decoder, Q8_0 DiT; the LM in NVFP4 is computed on the RTX 50's tensor cores")),
+        _ => (profile, None),
     }
 }
+
+/// The card memory a set's weights and work need: its preset's tier, and for the four-bit float sets their own.
+fn vram_tier(profile: &str) -> Option<f64> {
+    VRAM_TIERS
+        .iter()
+        .find(|(_, id, _)| *id == profile)
+        .map(|(_, _, tier)| *tier)
+        .or_else(|| FP4_TIERS.iter().find(|(id, _)| *id == profile).map(|(_, tier)| *tier))
+}
+
+/// The NVFP4 sets: the language model in NVFP4 makes the peak, 9.4 GB above the desktop on an RTX 4090 (14.11).
+const FP4_TIERS: [(&str, f64); 2] = [("quality-lm-nvfp4", 12.0), ("quality-nvfp4", 12.0)];
 
 pub fn apply(id: &str, configuration: &mut StudioConfiguration, openrouter_music_available: bool) -> Result<PresetApplication, String> {
     let preset = PRESETS.iter().find(|preset| preset.id == id).ok_or_else(|| format!("unknown preset '{id}'"))?;
@@ -212,7 +238,7 @@ pub fn apply(id: &str, configuration: &mut StudioConfiguration, openrouter_music
     music.mode = ExecutionMode::Local;
     music.local_engine = Some("minimaxmusic-cpp".into());
     music.cloud_model = None;
-    Ok(PresetApplication { profile_id: preset.profile_id.map(str::to_owned), selected_profile_changed: true })
+    Ok(PresetApplication { profile_id: preset.profile_id.map(|profile| on_this_card(profile).0.to_owned()), selected_profile_changed: true })
 }
 
 fn nvidia_smi() -> Option<(String, f64)> {
@@ -505,6 +531,23 @@ mod tests {
         // a 16 GB card in a machine with 5 GB of memory is offered nothing local
         assert_eq!(recommend_for_hardware("RTX 4080", 16.0, 5.0, weights).0, "full-openrouter");
         assert_eq!(recommend_for_hardware("RTX 4080", 16.0, 8.0, weights).0, "native-quality");
+    }
+
+    /// An RTX 5090 on the CUDA 13 build is recommended the quality set with its LM in NVFP4; an RTX 4090 keeps the
+    /// Q8_0 set; the NVFP4 sets live on the card where it has their room.
+    #[test]
+    fn the_rtx_50_takes_its_lm_in_nvfp4_and_other_cards_keep_q8() {
+        let rtx5090 = fp4_sibling("quality-q8", true);
+        assert_eq!(rtx5090.0, "quality-lm-nvfp4");
+        assert!(rtx5090.1.is_some_and(|files| files.contains("NVFP4")));
+        assert_eq!(fp4_sibling("quality-q8", false), ("quality-q8", None), "RTX 4090: the recommendation stays");
+        assert_eq!(fp4_sibling("balanced", true), ("balanced", None));
+        assert!(crate::model_manager::profile_exists("quality-lm-nvfp4"));
+        assert!(crate::model_manager::profile_exists("quality-nvfp4"));
+        if !cfg!(target_os = "macos") {
+            assert_eq!(ram_needed_gb("quality-lm-nvfp4", 9_360_000_000, 24.0), SYSTEM_RAM_GB + LOADING_RAM_GB, "its weights live on a 24 GB card");
+        }
+        assert!(ram_needed_gb("quality-lm-nvfp4", 9_360_000_000, 8.0) > SYSTEM_RAM_GB + LOADING_RAM_GB, "not on an 8 GB one");
     }
 
     #[cfg(windows)]
