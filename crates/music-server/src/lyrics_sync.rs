@@ -1087,32 +1087,6 @@ pub const PARAKEET_V3: &str = "parakeet-tdt-int8";
 pub const PARAKEET_ULTRA: &str = "parakeet-ultra-int8";
 pub const PARAKEET_FP32: &str = "parakeet-tdt-fp32";
 
-/// Parakeet on ONNX Runtime, before transcribe.cpp, under the karaoke folder: removed by the update screen.
-const RETIRED: &[&str] = &["models/parakeet", "models/parakeet-fp32", "models/parakeet-ultra"];
-
-/// Whisper-Faster (CTranslate2) with its CUDA 11 cuBLAS and cuDNN 8, and its models, under the karaoke folder, before
-/// CrisperWhisper on audio.cpp: removed by the update screen once CrisperWhisper is in place or karaoke hears with
-/// another recogniser.
-pub const RETIRED_WHISPER: &[&str] = &[
-    "runtime/whisper",
-    "models/whisper",
-    "runtime/whisper-faster.zip",
-    "runtime/whisper-faster.zip.json",
-    "runtime/whisper-faster.part",
-    "runtime/whisper-cublas.zip",
-    "runtime/whisper-cublas.zip.json",
-    "runtime/whisper-cublas.part",
-    "runtime/whisper-cublas.tar.xz",
-    "runtime/whisper-cublas.tar.xz.json",
-    "runtime/whisper-cublas.tar.part",
-    "runtime/whisper-cudnn.zip",
-    "runtime/whisper-cudnn.zip.json",
-    "runtime/whisper-cudnn.part",
-    "runtime/whisper-cudnn.tar.xz",
-    "runtime/whisper-cudnn.tar.xz.json",
-    "runtime/whisper-cudnn.tar.part",
-];
-
 /// Where each transcribe.cpp build lands in the karaoke folder: `dub_tcpp::engine_dir` and its library.
 #[cfg(windows)]
 const TCPP_CUDA: &str = "runtime/transcribe-cuda.zip";
@@ -1211,40 +1185,6 @@ pub struct LyricsSync {
 impl LyricsSync {
     pub fn new(data_root: &Path) -> Self {
         Self { downloader: Downloader::new(data_root.join("karaoke")), cuda_libraries: std::sync::OnceLock::new() }
-    }
-
-    /// What former releases left in the karaoke folder, by the names the update screen's table of changes knows:
-    /// the ONNX Parakeet and Faster-Whisper with its CUDA 11 libraries and models.
-    pub fn leftovers(&self) -> Vec<crate::update_screen::Leftover> {
-        let found = |listed: &[&str]| -> Vec<PathBuf> {
-            listed.iter().map(|relative| self.downloader.root().join(relative)).filter(|path| fs::symlink_metadata(path).is_ok()).collect()
-        };
-        vec![
-            crate::update_screen::Leftover { what: "parakeet-onnx", name: "Parakeet (ONNX)", paths: found(RETIRED) },
-            crate::update_screen::Leftover { what: "faster-whisper", name: "Faster-Whisper", paths: found(RETIRED_WHISPER) },
-        ]
-    }
-
-    /// Removes the leftovers named in `what`: the update screen's last step, after the downloads that take their
-    /// place. A link (another program's folder linked in) loses only the link; a hard-linked file stays with the
-    /// program that shares it.
-    pub fn remove_leftovers(&self, what: &[&str]) {
-        for leftover in self.leftovers().into_iter().filter(|leftover| what.contains(&leftover.what)) {
-            for path in leftover.paths {
-                let Ok(meta) = fs::symlink_metadata(&path) else { continue };
-                let removed = if meta.file_type().is_symlink() {
-                    fs::remove_dir(&path).or_else(|_| fs::remove_file(&path))
-                } else if meta.is_dir() {
-                    fs::remove_dir_all(&path)
-                } else {
-                    fs::remove_file(&path)
-                };
-                match removed {
-                    Ok(()) => studio_log!("removed the retired {}", path.display()),
-                    Err(error) => studio_log!("[ERROR] could not remove the retired {}: {error}", path.display()),
-                }
-            }
-        }
     }
 
     /// The folder of the cuBLAS 13 the music engine runs on: transcribe.cpp's CUDA build takes links to it.
@@ -2219,32 +2159,6 @@ Third");
 #[cfg(test)]
 mod live_recognition {
     use super::*;
-
-    #[test]
-    fn the_leftovers_wait_for_the_update_screen_and_go_by_name() {
-        let root = tempfile::tempdir().unwrap();
-        let sync = LyricsSync::new(root.path());
-        let karaoke = root.path().join("karaoke");
-        for folder in RETIRED {
-            fs::create_dir_all(karaoke.join(folder)).unwrap();
-            fs::write(karaoke.join(folder).join("model.bin"), b"x").unwrap();
-        }
-        let whisper = karaoke.join("models/whisper/faster-whisper-small/model.bin");
-        let kept = [karaoke.join("models/asr-gguf-parakeet-v3/parakeet-tdt-0.6b-v3-Q8_0.gguf"), karaoke.join("models/crisperwhisper2-turbo/model.safetensors"), whisper.clone()];
-        for file in &kept {
-            fs::create_dir_all(file.parent().unwrap()).unwrap();
-            fs::write(file, b"x").unwrap();
-        }
-        let found: Vec<(&str, usize)> = sync.leftovers().iter().map(|leftover| (leftover.what, leftover.paths.len())).collect();
-        assert_eq!(found, vec![("parakeet-onnx", RETIRED.len()), ("faster-whisper", 1)]);
-        sync.remove_leftovers(&["parakeet-onnx"]);
-        assert!(RETIRED.iter().all(|retired| !karaoke.join(retired).exists()));
-        assert!(kept.iter().all(|file| file.is_file()), "Faster-Whisper waits for its own turn");
-        sync.remove_leftovers(&["parakeet-onnx", "faster-whisper"]);
-        assert!(!karaoke.join("models/whisper").exists());
-        assert!(kept[..2].iter().all(|file| file.is_file()));
-        assert!(sync.leftovers().iter().all(|leftover| leftover.paths.is_empty()));
-    }
 
     #[test]
     fn karaoke_files_land_where_the_shared_binding_looks() {

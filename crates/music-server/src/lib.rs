@@ -55,6 +55,7 @@ mod progress;
 mod engine_log;
 mod song_errors;
 mod update_screen;
+mod retired;
 
 use song_errors::SongError;
 
@@ -7977,7 +7978,7 @@ fn update_plan_now(state: &AppState, karaoke: &lyrics_sync::LyricsSyncConfig) ->
             });
         }
     }
-    let leftovers = state.lyrics_sync.leftovers();
+    let leftovers = retired::leftovers(update_data_root(state));
     let whisper_left = leftovers.iter().any(|leftover| leftover.what == "faster-whisper" && !leftover.paths.is_empty());
     let mut added = Vec::new();
     if whisper_left && karaoke_on_whisper(karaoke) {
@@ -8088,12 +8089,13 @@ async fn run_update(state: &AppState, rows: &[update_screen::Row]) -> anyhow::Re
     }
     let karaoke = state.lyrics_sync_config.read().await.clone();
     let sync = state.lyrics_sync.clone();
+    let data_root = update_data_root(state).to_path_buf();
     tokio::task::spawn_blocking(move || {
         let mut gone = vec!["parakeet-onnx"];
         if !karaoke_on_whisper(&karaoke) || sync.crisper_ready(karaoke.runtime) {
             gone.push("faster-whisper");
         }
-        sync.remove_leftovers(&gone);
+        retired::remove_leftovers(&data_root, &gone);
     })
     .await?;
     Ok(())
