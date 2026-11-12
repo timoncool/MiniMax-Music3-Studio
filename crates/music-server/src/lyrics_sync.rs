@@ -72,15 +72,13 @@ impl LyricsSyncConfig {
     }
 }
 
-/// The audio.cpp server is pinned to its release tag, the CUDA 13 libraries it does not carry to their versions.
+/// The audio.cpp server is pinned to its release tag, the cuFFT of its CUDA 13 and CUDA 12 builds to their versions.
 #[cfg(test)]
 const AUDIOCPP_BUILD: &str = "/audio.cpp/releases/download/server-";
 #[cfg(test)]
 const SERVER_CUFFT_BUILD: &str = "12.4.0.43";
-#[cfg(target_os = "linux")]
-const SERVER_CUDART_BUILD: &str = "13.4.92";
-#[cfg(target_os = "linux")]
-const SERVER_CUBLAS_BUILD: &str = "13.8.0.4";
+#[cfg(test)]
+const SERVER_CUFFT12_BUILD: &str = "11.4.1.4";
 /// The ONNX Runtime the tempo and key models load. Mixing versions deadlocks the loader,
 /// so this is pinned exactly as Dub Studio pins it.
 #[cfg(test)]
@@ -1652,13 +1650,9 @@ Third");
                 // Every runtime is pinned to an exact release - the audio.cpp server to its tag, ONNX Runtime to its
                 // version, the server's NVIDIA libraries to their own version in the archive name - so a working setup
                 // keeps working.
-                #[cfg(target_os = "linux")]
-                let server_libraries = entry.url.contains(SERVER_CUDART_BUILD) || entry.url.contains(SERVER_CUBLAS_BUILD);
-                #[cfg(not(target_os = "linux"))]
-                let server_libraries = false;
                 let pinned = entry.url.contains(AUDIOCPP_BUILD)
-                    || server_libraries
                     || entry.url.contains(SERVER_CUFFT_BUILD)
+                    || entry.url.contains(SERVER_CUFFT12_BUILD)
                     || acpp_server::asset::CUDA12_RUNTIME.iter().any(|library| library.url == entry.url)
                     || entry.url.contains(ONNXRUNTIME_BUILD)
                     || entry.url.contains("/transcribe.cpp/releases/download/engine-");
