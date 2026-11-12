@@ -1469,6 +1469,7 @@ export const ru = {
     describeCover: 'Опишите обложку альбома',
     generateCoverPreview: 'Сгенерировать превью обложки',
     noSongsYet: 'Пока нет треков.',
+    toolsSongsFailed: 'Медиатека не ответила: {error}. Нажмите «Обновить», чтобы попробовать снова.',
     noLyrics: 'Без текста',
     closeNotification: 'Закрыть уведомление',
     displayNameHint: 'Имя хранится на этой машине и используется только для подписи студии.',

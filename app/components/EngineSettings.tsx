@@ -68,7 +68,7 @@ export const EngineSettings: React.FC = () => {
   const { t } = useI18n();
   const [options, setOptions] = useState<EngineOptions>(DEFAULTS);
   // With two cards or more, or a chosen card no longer in the computer, which one the studio computes on
-  const [cards, setCards] = useState<{ cards: { index: number; name: string; memory_gb: number }[] | null; running: number | null } | null>(null);
+  const [cards, setCards] = useState<{ cards: { index: number; name: string; memory_gb: number }[] | null; running: number | null; chosen_missing: string | null } | null>(null);
   useEffect(() => {
     void fetch('/v1/system/gpus').then(response => (response.ok ? response.json() : null)).then(setCards).catch(() => undefined);
   }, []);
@@ -210,7 +210,7 @@ export const EngineSettings: React.FC = () => {
         <span className="mt-2 block text-xs leading-5 text-zinc-500 dark:text-zinc-400">{t(`computeBackendHint_${options.backend}`)}</span>
       </div>
 
-      {cards?.cards && (cards.cards.length > 1 || (options.gpu != null && !cards.cards.some(card => card.index === options.gpu))) && (
+      {cards?.cards && (cards.cards.length > 1 || cards.chosen_missing != null || (options.gpu != null && !cards.cards.some(card => card.index === options.gpu))) && (
         <label className="block rounded-xl border border-zinc-200 p-3 dark:border-white/10">
           <span className="block text-sm font-medium text-zinc-800 dark:text-zinc-100">{t('gpuChoice')}</span>
           <select

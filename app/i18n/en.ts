@@ -1470,6 +1470,7 @@ export const en = {
     describeCover: 'Describe the album cover',
     generateCoverPreview: 'Generate cover preview',
     noSongsYet: 'No songs yet.',
+    toolsSongsFailed: 'The library did not answer: {error}. Press Refresh to try again.',
     noLyrics: 'No lyrics',
     closeNotification: 'Close notification',
     displayNameHint: 'This name is stored on this machine and is only used to label the studio.',

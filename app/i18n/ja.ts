@@ -1465,6 +1465,7 @@ export const ja = {
     describeCover: 'アルバムカバーの説明',
     generateCoverPreview: 'カバーのプレビューを生成',
     noSongsYet: 'まだ曲がありません。',
+    toolsSongsFailed: 'ライブラリが応答しませんでした：{error}。「更新」を押してもう一度試してください。',
     noLyrics: '歌詞なし',
     closeNotification: '通知を閉じる',
     displayNameHint: 'この名前はこのマシンにのみ保存され、スタジオの表示に使われます。',

@@ -84,12 +84,24 @@ export function StudioToolsPanel({ initialSongId }: { initialSongId?: string | n
   const [query, setQuery] = useState('');
   const filePicker = useRef<HTMLInputElement | null>(null);
 
+  // null until the library has answered: an empty list before that is not "no songs"
+  const [songsLoaded, setSongsLoaded] = useState(false);
+  const [songsError, setSongsError] = useState<string | null>(null);
   const loadSongs = useCallback(async () => {
-    const body = await fetch('/v1/library/songs').then(response => response.json());
-    const list: NativeLibrarySong[] = Array.isArray(body) ? body : body.songs ?? [];
-    const playable = list.filter(song => song.audio_path);
-    setSongs(playable);
-    setSongId(current => current || playable[0]?.id || '');
+    try {
+      const response = await fetch('/v1/library/songs');
+      if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+      const body = await response.json();
+      const list: NativeLibrarySong[] = Array.isArray(body) ? body : body.songs ?? [];
+      const playable = list.filter(song => song.audio_path);
+      setSongs(playable);
+      setSongsError(null);
+      setSongId(current => current || playable[0]?.id || '');
+    } catch (failure) {
+      setSongsError(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      setSongsLoaded(true);
+    }
   }, []);
 
   // A track handed over by a menu wins over whatever was chosen here before.
@@ -98,7 +110,7 @@ export function StudioToolsPanel({ initialSongId }: { initialSongId?: string | n
   }, [initialSongId]);
 
   useEffect(() => {
-    void loadSongs().catch(() => undefined);
+    void loadSongs();
     void fetch('/v1/openrouter/catalog')
       .then(response => response.json())
       .then((body: { models?: CatalogModel[] }) => {
@@ -234,7 +246,9 @@ export function StudioToolsPanel({ initialSongId }: { initialSongId?: string | n
               />
             </div>
             <div className="mt-2 max-h-56 overflow-y-auto rounded-lg border border-zinc-200 dark:border-white/10">
-              {visible.length === 0 && (
+              {!songsLoaded && <Loader2 size={14} className="mx-3 my-3 animate-spin text-zinc-400" />}
+              {songsError && <p className="px-3 py-3 text-xs text-rose-600 dark:text-rose-300">{t('toolsSongsFailed').replace('{error}', songsError)}</p>}
+              {songsLoaded && !songsError && visible.length === 0 && (
                 <p className="px-3 py-3 text-xs text-zinc-500">{t('noSongsYet')}</p>
               )}
               {visible.map(song => (
