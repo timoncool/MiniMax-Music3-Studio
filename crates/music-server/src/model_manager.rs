@@ -178,14 +178,15 @@ impl ModelManager {
     }
 
     pub fn catalog(&self) -> Catalog {
-        Catalog {
-            engine_id: ENGINE_ID,
-            repository: REPOSITORY,
-            revision: REVISION,
-            recommended_profile_id: recommended_profile(),
-            profiles: profiles(),
-            components: components(),
-        }
+        catalog_for(true, &[])
+    }
+
+    /// The catalog the window and agents see: no set or part in a four-bit float format where the CUDA 13 build does
+    /// not run, unless it is on disk already or `chosen` names it - what worked before keeps working.
+    pub fn offered_catalog(&self, chosen: &[String]) -> Catalog {
+        let mut kept: Vec<String> = chosen.to_vec();
+        kept.extend(components().into_iter().filter(|component| is_fp4(component.id) && published_component(&self.root.join(component.filename), component)).map(|component| component.id.to_string()));
+        catalog_for(crate::cuda_build::offers_fp4(), &kept)
     }
 
     /// `target` is the set the user actually selected. Progress and readiness
@@ -483,6 +484,20 @@ impl ModelManager {
     }
 }
 
+/// The catalog with the sets and parts in MXFP4 or NVFP4 left out where `fp4` is not offered, except those `kept`
+/// names (on disk or chosen); a set stays when it is kept or every part of it is.
+fn catalog_for(fp4: bool, kept: &[String]) -> Catalog {
+    let keeps = |id: &str| fp4 || !is_fp4(id) || kept.iter().any(|kept| kept == id);
+    Catalog {
+        engine_id: ENGINE_ID,
+        repository: REPOSITORY,
+        revision: REVISION,
+        recommended_profile_id: recommended_profile(),
+        profiles: profiles().into_iter().filter(|profile| keeps(profile.id) || profile.components.iter().all(|id| keeps(id))).collect(),
+        components: components().into_iter().filter(|component| keeps(component.id)).collect(),
+    }
+}
+
 fn recover_interrupted_download(state: &mut PersistentState) -> bool {
     let Some(job) = &mut state.active else { return false; };
     if !matches!(job.status, DownloadStatus::Downloading) { return false; }
@@ -729,13 +744,19 @@ fn part_path(path: &Path) -> PathBuf {
     PathBuf::from(value)
 }
 
-const PROFILE_SETS: [(&str, &str, bool, [&str; 5]); 5] = [
+const PROFILE_SETS: [(&str, &str, bool, [&str; 5]); 6] = [
     ("minimal", "Minimal - Q3_K_M / Q4_K_M / Q3_K_M (8 GB cards)", false, ["lm-q3", "depth-q4", "condition-f32", "dit-q3", "vocoder-f32"]),
     ("recommended-light", "Light - Q4_K_M / Q4_K_M / Q4_K_S (speed / low VRAM)", false, ["lm-q4", "depth-q4", "condition-f32", "dit-q4-s", "vocoder-f32"]),
     ("balanced", "Balanced - Q6_K / Q8_0 / Q5_K_M", false, ["lm-q6", "depth-q8", "condition-f32", "dit-q5", "vocoder-f32"]),
     ("quality-q8", "Recommended - Quality Q8_0", true, ["lm-q8", "depth-q8", "condition-f32", "dit-q8", "vocoder-f32"]),
+    ("quality-nvfp4", "NVFP4 - LM, depth and DiT in NVFP4 (CUDA 13 build; an RTX 50 computes it on its tensor cores)", false, ["lm-nvfp4", "depth-nvfp4", "condition-f32", "dit-nvfp4", "vocoder-f32"]),
     ("native", "Full native - BF16 / F32 original weights", false, ["lm-bf16", "depth-bf16", "condition-f32", "dit-f32", "vocoder-f32"]),
 ];
+
+/// The sets and parts in a four-bit float format, MXFP4 or NVFP4: offered only where `cuda_build::offers_fp4`.
+fn is_fp4(id: &str) -> bool {
+    id.ends_with("-mxfp4") || id.ends_with("-nvfp4")
+}
 
 fn profiles() -> Vec<Profile> {
     PROFILE_SETS.iter().map(|(id, label, recommended, ids)| profile(id, label, *recommended, ids)).collect()
@@ -880,6 +901,25 @@ mod tests {
     fn catalog_contains_every_pinned_component_variant() {
         assert_eq!(components().len(), 27);
         assert!(components().iter().all(|component| component.sha256.len() == 64));
+    }
+
+    /// Without the CUDA 13 build a clean install sees no set and no part in MXFP4 or NVFP4; one that chose or downloaded
+    /// one before keeps it and the set it makes; with the CUDA 13 build the NVFP4 set is there.
+    #[test]
+    fn fp4_leaves_the_catalog_where_it_is_not_offered_and_was_never_used() {
+        let clean = catalog_for(false, &[]);
+        assert!(clean.profiles.iter().all(|profile| !profile.components.iter().any(|id| is_fp4(id))));
+        assert!(clean.components.iter().all(|component| !is_fp4(component.id)));
+        let parts: Vec<String> = ["lm-nvfp4", "depth-nvfp4", "dit-nvfp4"].iter().map(|id| id.to_string()).collect();
+        let used = catalog_for(false, &parts);
+        assert!(used.profiles.iter().any(|profile| profile.id == "quality-nvfp4"), "every part of it is kept");
+        assert!(!used.components.iter().any(|component| component.id == "dit-mxfp4"), "one never used stays out");
+        let chosen = catalog_for(false, &["quality-nvfp4".to_string()]);
+        assert!(chosen.profiles.iter().any(|profile| profile.id == "quality-nvfp4"), "the chosen set stays");
+        let with = catalog_for(true, &[]);
+        assert!(with.profiles.iter().any(|profile| profile.id == "quality-nvfp4"));
+        assert!(with.components.iter().any(|component| component.id == "dit-mxfp4"));
+        assert!(!with.profiles.iter().find(|profile| profile.id == "quality-nvfp4").unwrap().recommended, "no default yet");
     }
 
     #[test]

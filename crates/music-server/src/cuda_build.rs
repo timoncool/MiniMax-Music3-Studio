@@ -222,6 +222,17 @@ pub fn accumulates_in_fp16() -> bool {
     device().is_some_and(|(compute, _)| compute < (8, 0))
 }
 
+/// The sets and parts in MXFP4 and NVFP4 are offered where the engine runs its CUDA 13 build: that is where they
+/// were tried.
+pub fn offers_fp4() -> bool {
+    fp4_offered(current())
+}
+
+/// No four-bit float sets on the CUDA 12 build, Vulkan (AMD, Intel), a Mac or the processor: not tried there.
+pub fn fp4_offered(build: Option<CudaBuild>) -> bool {
+    build == Some(CudaBuild::Cuda13)
+}
+
 /// Why the engine cannot start on CUDA here, in words for the person at the
 /// machine.
 pub const UNSUPPORTED: &str = "CUDA was chosen, but this card or its driver runs neither CUDA build of the engine: it needs an NVIDIA card from the GTX 900 series on and driver 525 or newer. Update the NVIDIA driver, or choose Vulkan in Settings.";
@@ -253,6 +264,14 @@ mod tests {
             assert!(SHIPPED.contains(&build), "{compute:?} with driver {driver}: {build:?} is not carried");
         }
         assert!(UNSUPPORTED.contains("525"), "the refusal names the oldest driver a build runs on");
+    }
+
+    /// MXFP4 and NVFP4 are offered on the CUDA 13 build alone.
+    #[test]
+    fn fp4_is_offered_on_the_cuda13_build_alone() {
+        assert!(fp4_offered(Some(CudaBuild::Cuda13)));
+        assert!(!fp4_offered(Some(CudaBuild::Cuda12)));
+        assert!(!fp4_offered(None), "AMD, Intel, a Mac or no card");
     }
 
     #[test]

@@ -8283,8 +8283,15 @@ async fn open_data_directory() -> Result<Json<Value>, (StatusCode, Json<ApiError
     Ok(Json(serde_json::json!({ "opened": root.display().to_string() })))
 }
 
+/// The catalog the window and agents are offered, with the set and parts chosen now kept in it.
+async fn offered_catalog(state: &AppState) -> model_manager::Catalog {
+    let mut chosen: Vec<String> = state.selected_profile_id.read().await.iter().cloned().collect();
+    chosen.extend(state.selected_component_ids.read().await.iter().flatten().cloned());
+    state.model_manager.offered_catalog(&chosen)
+}
+
 async fn setup_catalog(State(state): State<AppState>) -> Json<Value> {
-    let catalog = state.model_manager.catalog();
+    let catalog = offered_catalog(&state).await;
     // each file at its pinned revision, on Hugging Face and on the mirror, for a download by hand
     let sources: Vec<(String, String)> = catalog.components.iter().map(|component| (component.url(), net::mirror_url(&component.url()))).collect();
     let mut value = serde_json::to_value(catalog).unwrap_or_else(|_| serde_json::json!({}));
@@ -8350,7 +8357,7 @@ async fn setup_select(
 ) -> Result<Json<Value>, (StatusCode, Json<ApiError>)> {
     let matched = request.component_ids.as_deref().and_then(model_manager::profile_matching).map(str::to_owned);
     if let Some(profile_id) = request.profile_id.clone().filter(|value| !value.trim().is_empty()).or(matched) {
-        let known = state.model_manager.catalog().profiles.iter().any(|profile| profile.id == profile_id);
+        let known = offered_catalog(&state).await.profiles.iter().any(|profile| profile.id == profile_id);
         if !known {
             return Err(api_error(StatusCode::BAD_REQUEST, format!("unknown profile {profile_id}")));
         }
