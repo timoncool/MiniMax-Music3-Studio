@@ -232,6 +232,23 @@ run them on a real Linux desktop. **If you live on Linux, it would be great if y
 the fixes back as a pull request.** The studio keeps its data in `~/.local/share/minimax-music3-studio`
 (`$XDG_DATA_HOME`).
 
+## How fast is it
+
+How long a 3-minute song takes, by graphics card (averages from MiniMax Music3 Studio installations over 30 days,
+version 3.8, loading the models included). MiniMax Music 3 is the heaviest of the three models.
+
+| Your graphics card | A 3-minute song | Speed |
+|---|---|---|
+| NVIDIA, 24 GB or more | about 7 minutes | 0.45× of real time |
+| NVIDIA, 16 GB | about 8 minutes | 0.4× |
+| NVIDIA, 12 GB | about 15 minutes | 0.2× |
+| Apple silicon, 24 GB or more | about 30 minutes | 0.1× |
+| NVIDIA, 8 GB or less | about 45 minutes | 0.07× |
+| No graphics card (processor) | about 2.5 hours | 0.02× |
+
+On our machine (RTX 4090, the Q8_0 set): a 30-second song in 33 s; with the models kept loaded the second song takes
+28 s.
+
 ## What runs where
 
 | Part | NVIDIA | AMD, Intel | No graphics card |
