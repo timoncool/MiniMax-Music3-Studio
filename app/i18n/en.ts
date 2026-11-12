@@ -1792,6 +1792,7 @@ export const en = {
     karaokeInstrumental: 'This track has no words - there is nothing to time.',
     karaokeNoMatch: 'The recogniser heard no words from these lyrics in the audio. Check that the lyrics belong to this track, or try another recogniser in Settings.',
     karaokeNoWords: "No sung words could be heard in this track, so there is nothing to time. The vocal may be too buried or unclear, or the track may be instrumental.",
+    karaokeNoTimings: "The cloud recogniser answered without timed words, so there is nothing to time. Pick an OpenRouter model that returns timings (the Whisper family) in Settings - Providers, or a recogniser on this computer.",
     songInTheBin: '"{title}" is in the bin. Restore it in Library → Bin to work with it.',
     karaokeDownloading: 'Downloading the recogniser it needs, then timing the lyrics.',
     karaokeModelMissing: 'The chosen recogniser could not be downloaded. Check the connection, or pick another one in Settings.',
