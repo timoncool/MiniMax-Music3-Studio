@@ -54,6 +54,7 @@ const KEY_FILES: &[(&str, &str, u64)] = &[
     ("https://github.com/timoncool/BSRoformer.cpp/releases/download/studio-0.1.1/BSRoformer-windows-cuda13-x64.zip", "ggml-cuda.dll", 129_091_584),
     ("https://github.com/timoncool/BSRoformer.cpp/releases/download/studio-0.1.1/BSRoformer-windows-cpu-x64.zip", "bs_roformer-cli.exe", 183_808),
     ("https://github.com/timoncool/transcribe.cpp/releases/download/engine-0.2.1/transcribe-windows-cuda13-x64.zip", "ggml-cuda.dll", 140_795_392),
+    ("https://github.com/timoncool/transcribe.cpp/releases/download/engine-0.2.1/transcribe-windows-cuda12-x64.zip", "transcribe.dll", dub_tcpp::Build::Cuda12.library_size()),
     ("https://github.com/timoncool/transcribe.cpp/releases/download/engine-0.2.1/transcribe-windows-vulkan-x64.zip", "ggml-vulkan.dll", 45_308_928),
     ("https://github.com/timoncool/transcribe.cpp/releases/download/engine-0.2.1/transcribe-windows-cpu-x64.zip", "transcribe.dll", 2_054_656),
     // Linux: the regular file a tar's links point to, under its own versioned name. ONNX Runtime 1.31.1 and
@@ -293,7 +294,8 @@ mod tests {
         let downloads = crate::lyrics_sync::assets()
             .iter()
             .chain(crate::engine_runtime::ASSETS)
-            .chain([&crate::separation::ROFORMER_ENGINE, &crate::separation::ROFORMER_ENGINE_CPU]);
+            // the builds a studio downloaded before records: CUDA 13 and the processor
+            .chain([crate::separation::RoformerBuild::Cuda13, crate::separation::RoformerBuild::Cpu].into_iter().filter_map(crate::separation::roformer_asset));
         // the audio.cpp server and its libraries came after records: no install of them predates one
         let since_records = |asset: &crate::downloads::Asset| asset.id.starts_with("audiocpp-");
         for asset in downloads.filter(|asset| asset.kind == crate::downloads::AssetKind::Runtime && archive(asset.url) && !since_records(asset)) {

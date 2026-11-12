@@ -86,6 +86,9 @@ Code, save [docs/mcp-skill.md](docs/mcp-skill.md) as `~/.claude/skills/minimax-m
 - **Split a finished track into six stems** — drums, bass, other, vocals, guitar and
   piano — with HT-Demucs on the GPU, or on the CPU when you prefer. The model is an
   optional download like everything else.
+- **Restore a track after compression** — Apollo removes the artefacts of MP3 compression
+  from a song or any audio file and gives 44.1 kHz in the source's channels, as a new track
+  beside it, in the audio.cpp server.
 - **Any track to MIDI** — a song, a stem or a processed take becomes multi-instrument MIDI
   (34 instrument groups and drums) with MuScriptor on the GPU, in the audio.cpp server.
   A piano roll fills in while it listens; play it against the original, mute or solo
@@ -238,7 +241,8 @@ the fixes back as a pull request.** The studio keeps its data in `~/.local/share
 | Style by ear · MOSS-Music | CUDA | processor | processor |
 | Tempo and key · Beat This!, S-KEY | processor | processor | processor |
 | Stems · HT-Demucs | CUDA | Vulkan | processor |
-| Stems · Mel-Band RoFormer | CUDA | processor | processor |
+| Stems · Mel-Band RoFormer | CUDA | Vulkan | processor |
+| Restore after compression · Apollo | CUDA | Vulkan | processor |
 | Karaoke timing · Parakeet | CUDA | Vulkan | processor |
 | Karaoke timing · CrisperWhisper | CUDA | Vulkan | processor |
 | Writing assistant · llama.cpp | CUDA | Vulkan | processor |
@@ -251,8 +255,8 @@ The main, tested path is an NVIDIA card.
 - Training needs an NVIDIA card with 22 GB of video memory or more. The trainer has no other
   path, and on the processor one run would take days, so on any other machine the studio
   does not offer the training files.
-- On AMD and Intel cards HT-Demucs separates the stems through Vulkan in the audio.cpp server;
-  Mel-Band RoFormer and MuScriptor (audio to MIDI) run on the processor there.
+- On AMD and Intel cards HT-Demucs separates the stems through Vulkan in the audio.cpp server and
+  Mel-Band RoFormer through its Vulkan build; MuScriptor (audio to MIDI) runs on the processor there.
 - Karaoke's Parakeet runs on transcribe.cpp, the engine Dub Studio and Speech Studio use: its
   CUDA build on an NVIDIA card with a CUDA 13 driver (on Linux when the system has CUDA 13's
   cuBLAS), its Vulkan build on any other card, its processor build without one; on a Mac, Metal
@@ -423,6 +427,12 @@ the exact name in the listed folder is recognised and not downloaded again.
 
 MuScriptor by Kyutai & Mirelo, weights CC BY-NC 4.0 (non-commercial); the mirror carries the
 official files byte for byte, without the Hugging Face sign-in.
+
+**Restore after compression**
+
+| File | What for | Size | Put in the data folder |
+| --- | --- | --- | --- |
+| [`apollo-orig.gguf`](https://huggingface.co/audio-cpp/audio.cpp-gguf/resolve/73ce4162f6cce370dd533c6782b772135c1b2a8e/Apollo-GGUF/apollo-orig.gguf) | Apollo (JusperLee), weights CC BY-SA 4.0, in audio.cpp's server | 66 MB | `separation\models\apollo\` |
 
 **The writing assistant** — one of
 

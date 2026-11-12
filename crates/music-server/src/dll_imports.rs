@@ -373,12 +373,24 @@ mod tests {
         }
 
         let separation = |root: &Path| vec![crate::separation::Separator::new(root).downloader().clone()];
-        let roformer = Unit::of_downloader("BSRoformer.cpp CUDA", vec![&crate::separation::ROFORMER_ENGINE], separation);
+        let roformer_build = |build| crate::separation::roformer_asset(build).expect("every BSRoformer.cpp build on Windows");
+        let roformer = Unit::of_downloader("BSRoformer.cpp CUDA", vec![roformer_build(crate::separation::RoformerBuild::Cuda13)], separation);
         if let Some(folder) = found(&roformer, &mut skipped) {
             // the studio links the engine's cuBLAS 13 beside it
             loads.extend(folder_loads(&folder, &cublas13.iter().cloned().collect::<Vec<_>>()));
         }
-        let roformer_cpu = Unit::of_downloader("BSRoformer.cpp processor", vec![&crate::separation::ROFORMER_ENGINE_CPU], separation);
+        let roformer12 = Unit::of_downloader("BSRoformer.cpp CUDA 12", vec![roformer_build(crate::separation::RoformerBuild::Cuda12)], separation);
+        if let Some(folder) = found(&roformer12, &mut skipped) {
+            // the studio links the engine's cuBLAS 12 and CUDA 12 runtime beside it
+            let mut more = vec![engine_folder.clone()];
+            more.extend(cublas12.iter().cloned());
+            loads.extend(folder_loads(&folder, &more));
+        }
+        let roformer_vulkan = Unit::of_downloader("BSRoformer.cpp Vulkan", vec![roformer_build(crate::separation::RoformerBuild::Vulkan)], separation);
+        if let Some(folder) = found(&roformer_vulkan, &mut skipped) {
+            loads.extend(folder_loads(&folder, &[]));
+        }
+        let roformer_cpu = Unit::of_downloader("BSRoformer.cpp processor", vec![roformer_build(crate::separation::RoformerBuild::Cpu)], separation);
         if let Some(folder) = found(&roformer_cpu, &mut skipped) {
             loads.extend(folder_loads(&folder, &[]));
         }
