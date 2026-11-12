@@ -591,6 +591,9 @@ struct EngineOptions {
     keep_loaded: bool,
     max_batch: Option<u32>,
     max_seq: Option<u32>,
+    flash_attention: FlashAttention,
+    /// The switch of settings saved before `flash_attention`: read once and turned into `Off`, never written.
+    #[serde(skip_serializing)]
     disable_flash_attention: bool,
     split_cfg_forwards: bool,
     clamp_fp16: bool,
@@ -608,6 +611,20 @@ struct EngineOptions {
     /// developer build needs no settings at all.
     engine_bin: Option<String>,
 }
+
+/// Flash attention as Settings chooses it: `Auto` leaves it off only where it is known to go wrong.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+enum FlashAttention {
+    #[default]
+    Auto,
+    On,
+    Off,
+}
+
+/// The language model's context in tokens: what its KV cache can reach when nothing sets it smaller. The engine sizes
+/// the cache to each song when it loads the model per song (`kv_per_request`).
+const MODEL_CONTEXT: u32 = 10240;
 
 impl EngineOptions {
     /// How many songs one request may render, and the `--max-batch` the engine
@@ -682,9 +699,28 @@ impl EngineOptions {
         self.cuda_build().is_some() && cuda_build::fa_regressed()
     }
 
+    /// Settings saved before the three-way choice said "off" with a switch.
+    fn migrated(mut self) -> Self {
+        if self.disable_flash_attention {
+            self.flash_attention = FlashAttention::Off;
+            self.disable_flash_attention = false;
+        }
+        self
+    }
+
+    /// Why flash attention is off for this start, `None` when it is on.
+    fn flash_attention_off_reason(&self) -> Option<&'static str> {
+        match self.flash_attention {
+            FlashAttention::On => None,
+            FlashAttention::Off => Some("chosen in Settings"),
+            FlashAttention::Auto if self.new_cuda_fa_regression() => Some("new CUDA compute capability, where flash attention sang nonsense (#194)"),
+            FlashAttention::Auto => None,
+        }
+    }
+
     fn to_engine(self) -> music_engine::mm_server::MmServerOptions {
         let cuda = self.cuda_build();
-        let new_cuda_fa_regression = self.new_cuda_fa_regression();
+        let fa_off = self.flash_attention_off_reason().is_some();
         music_engine::mm_server::MmServerOptions {
             backend: self.backend,
             keep_loaded: self.keep_loaded,
@@ -696,7 +732,7 @@ impl EngineOptions {
             // songs failed before it started.
             max_batch: Some(self.effective_max_batch()),
             max_seq: self.max_seq,
-            disable_flash_attention: self.disable_flash_attention || new_cuda_fa_regression,
+            disable_flash_attention: fa_off,
             split_cfg_forwards: self.split_cfg_forwards,
             // Off CUDA - Vulkan, where an AMD Radeon leaves the FP16 range
             // and renders silence, or the processor - and on CUDA cards before
@@ -952,7 +988,7 @@ pub async fn serve() -> anyhow::Result<()> {
         library: library::Library::open_default()?,
         engine: Arc::new(tokio::sync::Mutex::new(None)),
         engine_use: Arc::new(tokio::sync::RwLock::new(())),
-        engine_options: Arc::new(RwLock::new(persisted.as_ref().map(|settings| settings.engine_options.clone()).unwrap_or_default())),
+        engine_options: Arc::new(RwLock::new(persisted.as_ref().map(|settings| settings.engine_options.clone().migrated()).unwrap_or_default())),
         failed_devices: Arc::new(RwLock::new(Vec::new())),
         active_device: Arc::new(RwLock::new(None)),
         engine_runtime: Arc::new(engine_runtime::EngineRuntime::new(&engine_bundle_root(), &studio_data_root().unwrap_or_else(|| std::path::PathBuf::from(".")))),
@@ -4470,13 +4506,27 @@ async fn engine_options(State(state): State<AppState>) -> Json<Value> {
         "bundled"
     };
     // a start holds the engine for as long as it takes (a download, the weights): the page is answered now
-    let (running, starting) = match state.engine.try_lock() {
-        // canonicalised paths carry the \\?\ prefix, which the saved path and the environment do not
-        Ok(engine) => (engine.as_ref().map(|engine| music_engine::mm_server::strip_verbatim(&engine.config().executable).display().to_string()), false),
-        Err(_) => (None, true),
+    let (running, starting, launched) = match state.engine.try_lock() {
+        // canonicalised paths carry the verbatim prefix, which the saved path and the environment do not
+        Ok(engine) => (
+            engine.as_ref().map(|engine| music_engine::mm_server::strip_verbatim(&engine.config().executable).display().to_string()),
+            false,
+            engine.as_ref().map(|engine| engine.config().options.clone()),
+        ),
+        Err(_) => (None, true, None),
     };
+    // What the running engine was started with, so the page says what is in effect, not only what is saved.
+    let in_effect = launched.map(|launched| {
+        serde_json::json!({
+            "max_seq": launched.max_seq.unwrap_or(MODEL_CONTEXT),
+            "max_seq_reason": if launched.max_seq.is_some() { "set" } else { "full" },
+            "flash_attention": !launched.disable_flash_attention,
+        })
+    });
     Json(serde_json::json!({
         "options": options,
+        "in_effect": in_effect,
+        "saved_max_seq": options.max_seq.unwrap_or(MODEL_CONTEXT),
         "effective_max_batch": options.effective_max_batch(),
         "restart_required_to_apply": true,
         "executable": executable,
@@ -4492,6 +4542,7 @@ async fn update_engine_options(
     State(state): State<AppState>,
     Json(mut request): Json<EngineOptions>,
 ) -> Result<Json<Value>, (StatusCode, Json<ApiError>)> {
+    request = request.migrated();
     if request.max_batch.is_some_and(|value| value == 0 || value > 8) {
         return Err(api_error(StatusCode::BAD_REQUEST, "max_batch must be between 1 and 8".into()));
     }
@@ -4685,6 +4736,9 @@ async fn restart_engine(state: &AppState) -> Result<(), String> {
         // The engine loads eleven gigabytes of weights the moment it starts.
         // If the writing assistant is still holding the card, it does not finish.
         free_the_card_for_the_engine(state).await;
+        if let Some(reason) = attempt.flash_attention_off_reason() {
+            music_engine::mm_server::note_in_log(&format!("flash-attention off on {}: {reason}", device_name(device)));
+        }
         let config = engine_location(attempt)
             .resolve()
             .map_err(|error| format!("the local engine runtime was not found: {error}"))?;
@@ -4937,11 +4991,6 @@ fn put_the_engine_folder_on_path() {
 }
 
 fn engine_location(options: EngineOptions) -> music_engine::mm_server::MmServerLocation {
-    if options.new_cuda_fa_regression() {
-        music_engine::mm_server::note_in_log(
-            "flash-attention off: new CUDA compute capability, ggml 0.27 FA regression (#194)",
-        );
-    }
     // The environment still wins, so a developer build needs no settings: a
     // saved path is what is left when nothing is pinned from outside.
     let configured_executable = env::var_os("MINIMAX_MM_SERVER_BIN")
@@ -8312,11 +8361,12 @@ async fn submit_music_job(state: AppState, mut request: CreateMusicJobRequest, a
         Ok(tokens) => {
             let max_seq = state.engine_options.read().await.max_seq;
             // audio codes set the song's frames, as a re-render's do
-            let frames = match mm_request.get("audio_codes").and_then(Value::as_str) {
+            let codes = mm_request.get("audio_codes").and_then(Value::as_str);
+            let frames = match codes {
                 Some(codes) => prompt_check::replay_frames(codes),
                 None => prompt_check::song_frames(request.duration_seconds),
             };
-            if let Some(refusal) = prompt_check::kv_cache_shortfall(tokens, frames, max_seq) {
+            if let Some(refusal) = prompt_check::kv_cache_shortfall(tokens, frames, max_seq, codes.is_some()) {
                 return (StatusCode::BAD_REQUEST, Json(failed_request_job(request, engine_id, refusal)));
             }
         }
@@ -8448,7 +8498,7 @@ async fn submit_replay_job(state: AppState, request: ReplayMusicJobRequest, atte
     if max_seq.is_some() {
         let tokens = state.music_server.tokenize(&caption, &lyrics).await.map_err(|error| api_error(StatusCode::SERVICE_UNAVAILABLE, format!("the engine did not count the prompt: {error:#}")))?;
         let frames = prompt_check::replay_frames(synth_request.get("audio_codes").and_then(Value::as_str).unwrap_or_default());
-        if let Some(refusal) = prompt_check::kv_cache_shortfall(tokens, frames, max_seq) {
+        if let Some(refusal) = prompt_check::kv_cache_shortfall(tokens, frames, max_seq, true) {
             return Err(api_error(StatusCode::BAD_REQUEST, refusal.to_string()));
         }
     }
@@ -9839,6 +9889,25 @@ mod tests {
             ["crisperwhisper", "htdemucs", "muscriptor-large", "muscriptor-medium", "muscriptor-small"],
             "a tool whose model joins the config only at its first run restarts the server under another tool's run"
         );
+    }
+
+    #[test]
+    fn flash_attention_is_chosen_auto_on_or_off_and_the_old_switch_reads_as_off() {
+        let old: EngineOptions = serde_json::from_value(serde_json::json!({ "disable_flash_attention": true })).unwrap();
+        assert_eq!(old.migrated().flash_attention, FlashAttention::Off);
+        let old: EngineOptions = serde_json::from_value(serde_json::json!({ "disable_flash_attention": false })).unwrap();
+        assert_eq!(old.migrated().flash_attention, FlashAttention::Auto);
+        let written = serde_json::to_value(EngineOptions { flash_attention: FlashAttention::On, ..EngineOptions::default() }).unwrap();
+        assert_eq!(written["flash_attention"], "on");
+        assert!(written.get("disable_flash_attention").is_none(), "the old switch is never written again");
+        let off = EngineOptions { flash_attention: FlashAttention::Off, ..EngineOptions::default() };
+        assert_eq!(off.flash_attention_off_reason(), Some("chosen in Settings"));
+        assert!(off.to_engine().disable_flash_attention);
+        let on = EngineOptions { flash_attention: FlashAttention::On, ..EngineOptions::default() };
+        assert_eq!(on.flash_attention_off_reason(), None);
+        assert!(!on.to_engine().disable_flash_attention, "On is passed even where Auto would turn it off");
+        let cpu = EngineOptions { backend: music_engine::mm_server::ComputeBackend::Cpu, ..EngineOptions::default() };
+        assert_eq!(cpu.flash_attention_off_reason(), None, "Auto keeps it on where nothing is known to go wrong");
     }
 
     #[test]

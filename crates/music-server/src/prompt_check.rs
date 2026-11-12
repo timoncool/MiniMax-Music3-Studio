@@ -108,13 +108,15 @@ pub fn too_long_message(tokens: u64) -> crate::song_errors::SongError {
 const FRAME_RATE: f64 = 25.0;
 const MAX_FRAMES: u64 = 9000;
 
-/// The refusal of a song that does not fit the language model's cache the engine was started with
-/// (`--max-seq`): a prompt longer than the cache stops the engine at its first step, and a song longer
-/// than what is left after the prompt is cut short.
-pub fn kv_cache_shortfall(tokens: u64, frames: u64, max_seq: Option<u32>) -> Option<crate::song_errors::SongError> {
+/// The refusal of a song whose prompt leaves no room in the language model's cache the engine was
+/// started with (`--max-seq`): such a prompt stops the engine at its first step. A new song longer than
+/// what is left after the prompt is not refused: the engine shortens it to the room left. A replay
+/// (`replayed`) cannot be shortened: the engine refuses codes over the room left.
+pub fn kv_cache_shortfall(tokens: u64, frames: u64, max_seq: Option<u32>, replayed: bool) -> Option<crate::song_errors::SongError> {
     let max_seq = u64::from(max_seq?);
     let needed = tokens + frames + 2;
-    (needed > max_seq).then(|| crate::song_errors::SongError::KvCacheShort {
+    let fits = if replayed { needed <= max_seq } else { tokens + 2 <= max_seq };
+    (!fits).then(|| crate::song_errors::SongError::KvCacheShort {
         needed,
         tokens,
         frames,
@@ -140,10 +142,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_song_over_the_set_cache_is_refused_with_the_size_it_needs() {
-        assert_eq!(kv_cache_shortfall(773, song_frames(60.0), None), None);
-        assert_eq!(kv_cache_shortfall(300, song_frames(8.0), Some(512)), None);
-        let refused = kv_cache_shortfall(773, song_frames(60.0), Some(512)).expect("over the cache").to_string();
+    fn only_a_prompt_over_the_set_cache_is_refused_and_a_long_song_goes_to_the_engine() {
+        assert_eq!(kv_cache_shortfall(773, song_frames(60.0), None, false), None);
+        assert_eq!(kv_cache_shortfall(300, song_frames(8.0), Some(512), false), None);
+        assert_eq!(kv_cache_shortfall(300, song_frames(60.0), Some(512), false), None, "the engine shortens the song to the room left");
+        assert_eq!(kv_cache_shortfall(510, song_frames(60.0), Some(512), false), None, "one frame still fits");
+        assert!(kv_cache_shortfall(511, song_frames(60.0), Some(512), false).is_some(), "no frame fits after the prompt");
+        assert!(kv_cache_shortfall(300, song_frames(60.0), Some(512), true).is_some(), "a replay keeps all its frames");
+        assert_eq!(kv_cache_shortfall(300, song_frames(8.0), Some(512), true), None);
+        let refused = kv_cache_shortfall(773, song_frames(60.0), Some(512), false).expect("over the cache").to_string();
         assert!(refused.contains("2275 places") && refused.contains("for 60 s") && refused.contains("to 512") && refused.contains("2560 or more"), "{refused}");
         assert_eq!(song_frames(1000.0), 9000, "frames stop at the model's cap");
         assert_eq!(replay_frames(&vec!["7"; 24].join(",")), 2);
