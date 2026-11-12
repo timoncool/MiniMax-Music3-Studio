@@ -8,6 +8,7 @@ Windows build.
 ### Added
 
 - **The interface can be scaled**, as in YuE2 Studio ([YuE2 Studio #165](https://github.com/timoncool/YuE2-Studio/issues/165)): Settings - Appearance - Interface scale draws the whole studio from 90 to 150 % and keeps it for the next start; Ctrl + plus and Ctrl + minus, or Ctrl with the mouse wheel, change it too, and Ctrl + 0 returns to 100 %. The Winamp mode gives the chosen scale back when it closes.
+- **A song the LM KV cache cut short says so on its card**, as in YuE2 Studio: when the caption and lyrics leave the language model less room than the song's duration needs, the engine makes the song shorter, and its card now carries a "Cut short" mark that tells how many seconds came out and what to do - shorten the lyrics, or raise or clear the LM KV cache in Settings, Engine.
 
 ### Changed
 
