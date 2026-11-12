@@ -1018,6 +1018,19 @@ pub async fn serve() -> anyhow::Result<()> {
     tokio::spawn(resume_unfinished_jobs(state.clone()));
     {
         let state = state.clone();
+        tokio::spawn(async move {
+            let mut every = tokio::time::interval(std::time::Duration::from_secs(6 * 3600));
+            loop {
+                every.tick().await;
+                let state = state.clone();
+                if let Err(error) = tokio::task::spawn_blocking(move || purge_old_trash(&state)).await {
+                    studio_log!("[ERROR] the bin was not emptied of its old songs: {error}");
+                }
+            }
+        });
+    }
+    {
+        let state = state.clone();
         // all three read or rewrite the stored tracks in place, so one after the other
         tokio::spawn(async move {
             let library = state.library.clone();
@@ -1166,6 +1179,9 @@ pub async fn serve() -> anyhow::Result<()> {
         .route("/v1/library/songs", get(library_songs).post(create_library_song))
         .route("/v1/library/import", post(import_library_audio))
         .route("/v1/library/songs/{id}", get(library_song).put(update_library_song).delete(delete_library_song))
+        .route("/v1/library/trash", get(library_trash).delete(empty_library_trash))
+        .route("/v1/library/trash/{id}", axum::routing::delete(delete_trashed_song))
+        .route("/v1/library/trash/{id}/restore", post(restore_library_song))
         .route("/v1/library/songs/{id}/liked", axum::routing::put(set_library_song_liked))
         .route("/v1/library/songs/{id}/note", axum::routing::put(set_library_song_note))
         .route("/v1/library/liked", get(library_liked))
@@ -4340,23 +4356,167 @@ async fn update_library_song(State(state):State<AppState>,Path(id):Path<String>,
     }
     Ok(Json(song))
 }
-/// Removes a song and its files; a file that cannot go (a player holds it)
-/// is named in the answer instead of only in the log.
+/// Puts a song in the bin with the songs made from it (its stems and the
+/// like); the bin keeps them for `TRASH_DAYS` days, Restore brings them back.
 async fn delete_library_song(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<Value>, (StatusCode, Json<ApiError>)> {
-    let song = state.library.get_song(&id).map_err(|e| api_error(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    if !state.library.delete_song(&id).map_err(|e| api_error(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))? {
-        return Err(api_error(StatusCode::NOT_FOUND, "Song not found".into()));
+    let internal = |e: anyhow::Error| api_error(StatusCode::INTERNAL_SERVER_ERROR, e.to_string());
+    let song = state.library.get_song(&id).map_err(internal)?.ok_or_else(|| api_error(StatusCode::NOT_FOUND, "Song not found".into()))?;
+    if library::is_trashed(&song) {
+        return Ok(Json(serde_json::json!({ "deleted": true, "trashed": true, "with": 0 })));
     }
-    let mut left = Vec::new();
-    if let Some(song) = song {
-        for path in song_files(&state, &song) {
-            if let Err(error) = std::fs::remove_file(&path) {
-                studio_log!("[ERROR] delete song {id}: could not remove {}: {error}", path.display());
-                left.push(format!("{}: {error}", plain_path(&path)));
+    let made_from: Vec<String> = state
+        .library
+        .list_songs()
+        .map_err(internal)?
+        .into_iter()
+        .filter(|other| derived_from(other).is_some_and(|(from, _)| from == id))
+        .map(|other| other.id)
+        .collect();
+    state.library.set_song_trashed(&id, true, None).map_err(internal)?;
+    for other in &made_from {
+        state.library.set_song_trashed(other, true, Some(&id)).map_err(internal)?;
+    }
+    Ok(Json(serde_json::json!({ "deleted": true, "trashed": true, "with": made_from.len() })))
+}
+
+/// How long the bin keeps a song before it goes for good.
+const TRASH_DAYS: u64 = 30;
+
+/// The songs in the bin, each with the songs that went there with it.
+async fn library_trash(State(state): State<AppState>) -> Result<Json<Value>, (StatusCode, Json<ApiError>)> {
+    let internal = |e: anyhow::Error| api_error(StatusCode::INTERNAL_SERVER_ERROR, e.to_string());
+    let trashed = state.library.trashed_songs().map_err(internal)?;
+    let mut songs = Vec::new();
+    for song in trashed.iter().filter(|song| library::trashed_with(song).is_none()) {
+        let mut listed = listed_song(song).map_err(|e| api_error(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        let with = trashed.iter().filter(|other| library::trashed_with(other) == Some(song.id.as_str())).count();
+        listed["trashed_at"] = Value::from(library::trashed_at(song));
+        listed["gone_at"] = Value::from(library::trashed_at(song) + TRASH_DAYS * 86_400);
+        listed["with"] = Value::from(with);
+        songs.push(listed);
+    }
+    Ok(Json(serde_json::json!({ "songs": songs, "days": TRASH_DAYS })))
+}
+
+/// Takes a song out of the bin with the songs that went there with it.
+async fn restore_library_song(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<Value>, (StatusCode, Json<ApiError>)> {
+    let internal = |e: anyhow::Error| api_error(StatusCode::INTERNAL_SERVER_ERROR, e.to_string());
+    let song = state.library.get_song(&id).map_err(internal)?.ok_or_else(|| api_error(StatusCode::NOT_FOUND, "Song not found".into()))?;
+    if !library::is_trashed(&song) {
+        return Err(api_error(StatusCode::CONFLICT, "the song is not in the bin".into()));
+    }
+    let with: Vec<String> = state
+        .library
+        .trashed_songs()
+        .map_err(internal)?
+        .into_iter()
+        .filter(|other| library::trashed_with(other) == Some(id.as_str()))
+        .map(|other| other.id)
+        .collect();
+    state.library.set_song_trashed(&id, false, None).map_err(internal)?;
+    for other in &with {
+        state.library.set_song_trashed(other, false, None).map_err(internal)?;
+    }
+    Ok(Json(serde_json::json!({ "restored": true, "with": with.len() })))
+}
+
+/// Deletes a song of the bin for good, with the songs that went there with it.
+async fn delete_trashed_song(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<Value>, (StatusCode, Json<ApiError>)> {
+    let song = state
+        .library
+        .get_song(&id)
+        .map_err(|e| api_error(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| api_error(StatusCode::NOT_FOUND, "Song not found".into()))?;
+    if !library::is_trashed(&song) {
+        return Err(api_error(StatusCode::CONFLICT, "only a song in the bin is deleted for good".into()));
+    }
+    delete_for_good(&state, &id).map_err(|e| api_error(StatusCode::CONFLICT, format!("{e:#}")))?;
+    Ok(Json(serde_json::json!({ "deleted": true })))
+}
+
+/// Empties the bin; a song whose files the system's recycle bin does not take stays, and is named.
+async fn empty_library_trash(State(state): State<AppState>) -> Result<Json<Value>, (StatusCode, Json<ApiError>)> {
+    let ids: Vec<String> = state
+        .library
+        .trashed_songs()
+        .map_err(|e| api_error(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")))?
+        .into_iter()
+        .filter(|song| library::trashed_with(song).is_none())
+        .map(|song| song.id)
+        .collect();
+    let mut deleted = 0;
+    let mut stayed = Vec::new();
+    for id in &ids {
+        match delete_for_good(&state, id) {
+            Ok(()) => deleted += 1,
+            Err(error) => stayed.push(format!("{error:#}")),
+        }
+    }
+    if !stayed.is_empty() {
+        return Err(api_error(StatusCode::CONFLICT, stayed.join("\n")));
+    }
+    Ok(Json(serde_json::json!({ "deleted": deleted })))
+}
+
+fn purge_old_trash(state: &AppState) {
+    // a song the recycle bin keeps refusing is reported once, not every six hours
+    static REPORTED: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |since| since.as_secs());
+    let songs = match state.library.trashed_songs() {
+        Ok(songs) => songs,
+        Err(error) => {
+            studio_log!("[ERROR] the bin could not be read to empty its old songs: {error:#}");
+            return;
+        }
+    };
+    for song in songs.iter().filter(|song| library::trashed_with(song).is_none() && library::trashed_at(song) + TRASH_DAYS * 86_400 <= now) {
+        match delete_for_good(state, &song.id) {
+            Ok(()) => studio_log!("{} left the bin after {TRASH_DAYS} days", song.id),
+            Err(error) => {
+                let mut reported = REPORTED.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                if !reported.contains(&song.id) {
+                    reported.push(song.id.clone());
+                    studio_log!("[ERROR] {} could not leave the bin: {error:#}", song.id);
+                }
             }
         }
     }
-    Ok(Json(serde_json::json!({ "deleted": true, "files_left": left })))
+}
+
+/// Removes a song of the bin and the songs that went there with it from the
+/// library, their files sent to the system's recycle bin first.
+fn delete_for_good(state: &AppState, id: &str) -> anyhow::Result<()> {
+    delete_songs_for_good(&state.library, id, |song| song_files(state, song), |path| trash::delete(path).map_err(|error| error.to_string()))
+}
+
+/// A file the recycle bin does not take (a Linux desktop without one, a
+/// network drive) keeps the songs in the studio's bin and is named; nothing is
+/// deleted past it.
+fn delete_songs_for_good(
+    library: &library::Library,
+    id: &str,
+    files: impl Fn(&library::Song) -> Vec<std::path::PathBuf>,
+    recycle: impl Fn(&std::path::Path) -> Result<(), String>,
+) -> anyhow::Result<()> {
+    let mut songs: Vec<library::Song> = library.trashed_songs()?.into_iter().filter(|song| library::trashed_with(song) == Some(id)).collect();
+    if let Some(song) = library.get_song(id)? {
+        songs.push(song);
+    }
+    let mut refused = Vec::new();
+    for song in &songs {
+        for path in files(song).into_iter().filter(|path| path.exists()) {
+            if let Err(error) = recycle(&path) {
+                refused.push(format!("{}: {error}", plain_path(&path)));
+            }
+        }
+    }
+    if !refused.is_empty() {
+        anyhow::bail!("the system's recycle bin did not take these files, so the song stays in the studio's bin: {}", refused.join("; "));
+    }
+    for song in &songs {
+        library.delete_song(&song.id)?;
+    }
+    Ok(())
 }
 
 /// The files in the media folder that belong to one song: its audio, its
@@ -9830,6 +9990,32 @@ mod tests {
         assert!(nothing_heard(&anyhow::anyhow!("{}", lyrics_sync::NO_TIMINGS)));
         assert!(!nothing_heard(&anyhow::anyhow!("the recogniser stopped: out of memory")));
         assert!(!lyrics_sync::NO_TIMINGS.contains(lyrics_sync::NO_WORDS), "dataset preparation tells them apart by NO_WORDS");
+    }
+
+    #[test]
+    fn a_song_whose_files_the_recycle_bin_refuses_stays_in_the_studios_bin() {
+        let root = std::env::temp_dir().join(format!("minimax-bin-refused-{}", uuid::Uuid::now_v7().simple()));
+        let library = library::Library::open_at(root.join("library.sqlite"), root.join("media")).unwrap();
+        let new_song = |title: &str| library.create_song(library::SongInput { title: title.into(), audio_path: None, caption: String::new(), lyrics: String::new(), metadata: Value::Null, generation_settings: Value::Null, engine_id: "manual".into(), profile_id: None, replay_request: None, audio_codes: None, source: "manual".into() }).unwrap().id;
+        let (song, stem) = (new_song("Harbour"), new_song("Harbour · vocals"));
+        library.set_song_trashed(&song, true, None).unwrap();
+        library.set_song_trashed(&stem, true, Some(&song)).unwrap();
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("harbour.flac");
+        std::fs::write(&file, b"fLaC").unwrap();
+        let files = |_: &library::Song| vec![file.clone()];
+
+        let refused = delete_songs_for_good(&library, &song, files, |_| Err("no recycle bin on this desktop".into())).unwrap_err();
+        assert!(format!("{refused:#}").contains("no recycle bin on this desktop"), "{refused:#}");
+        assert!(file.exists(), "a file the recycle bin refused is not deleted past it");
+        assert_eq!(library.trashed_songs().unwrap().len(), 2, "the song and its stem stay in the studio's bin");
+
+        let recycled = std::cell::RefCell::new(Vec::new());
+        delete_songs_for_good(&library, &song, files, |path| { recycled.borrow_mut().push(path.to_path_buf()); Ok(()) }).unwrap();
+        assert!(library.get_song(&song).unwrap().is_none() && library.get_song(&stem).unwrap().is_none());
+        assert!(!recycled.borrow().is_empty());
+        drop(library);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
