@@ -1750,26 +1750,32 @@ fn acpp_assets(build: acpp_server::asset::Build) -> Vec<&'static downloads::Asse
     acpp::server_ids(build).iter().filter_map(|id| acpp::asset(id)).collect()
 }
 
-/// Downloads what audio.cpp's server of `build` still lacks: the program and its libraries, and for the CUDA 13 build
-/// on Windows the cuBLAS 13 it shares with the music engine, through the engine runtime that downloads it.
+/// Downloads what audio.cpp's server of `build` still lacks: the program and its libraries, and the CUDA libraries it
+/// shares with the music engine through the engine runtime that downloads them (`shared_cuda`).
 async fn install_acpp(state: &AppState, build: acpp_server::asset::Build, scope: &str) -> anyhow::Result<()> {
     let acpp = state.lyrics_sync.acpp();
     state.lyrics_sync.downloader().install_all(scope, &acpp.missing(build)).await?;
-    if cfg!(windows) && build == acpp_server::asset::Build::Cuda13 {
-        state.engine_runtime.install_missing(cuda_build::CudaBuild::Cuda13).await?;
+    if let Some(cuda) = shared_cuda(build) {
+        state.engine_runtime.install_missing(cuda).await?;
     }
     Ok(())
 }
 
-/// The bytes audio.cpp's server of `build` still needs, the engine's cuBLAS 13 among them for the CUDA 13 build.
+/// The engine's CUDA build whose libraries audio.cpp's server of `build` loads: cuBLAS 13 on Windows for the CUDA 13
+/// build; on Linux the CUDA runtime and cuBLAS of either CUDA build.
+fn shared_cuda(build: acpp_server::asset::Build) -> Option<cuda_build::CudaBuild> {
+    match build {
+        acpp_server::asset::Build::Cuda13 => Some(cuda_build::CudaBuild::Cuda13),
+        acpp_server::asset::Build::Cuda12 if cfg!(target_os = "linux") => Some(cuda_build::CudaBuild::Cuda12),
+        _ => None,
+    }
+}
+
+/// The bytes audio.cpp's server of `build` still needs, the CUDA libraries it shares with the engine among them.
 fn acpp_missing_bytes(state: &AppState, build: acpp_server::asset::Build) -> u64 {
     let server: u64 = state.lyrics_sync.acpp().missing(build).iter().map(|asset| asset.bytes).sum();
-    let cublas: u64 = if cfg!(windows) && build == acpp_server::asset::Build::Cuda13 {
-        state.engine_runtime.missing(cuda_build::CudaBuild::Cuda13).iter().map(|asset| asset.bytes).sum()
-    } else {
-        0
-    };
-    server + cublas
+    let shared: u64 = shared_cuda(build).map(|cuda| state.engine_runtime.missing(cuda).iter().map(|asset| asset.bytes).sum()).unwrap_or(0);
+    server + shared
 }
 
 /// HT-Demucs runs here on `runtime`'s build: its model and that build of audio.cpp's server are downloaded.
