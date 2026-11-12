@@ -385,6 +385,12 @@ fn plain_lyrics(found: &str) -> String {
     found.lines().map(|line| without_time(line.trim())).filter(|line| !line.is_empty()).collect::<Vec<_>>().join("\n")
 }
 
+/// The lyrics a recording sings, as plain lines laid out as dataset preparation
+/// lays out what it hears. None when nothing sung is left.
+pub(crate) fn recognised_lyrics(words: &[(f64, String)]) -> Option<String> {
+    transcript(words).map(|timed| plain_lyrics(&timed))
+}
+
 pub async fn cancel(State(state): State<AppState>) -> Json<serde_json::Value> {
     state.prepare_cancel.store(true, Ordering::Relaxed);
     Json(serde_json::json!({ "cancelled": true }))

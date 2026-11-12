@@ -1881,6 +1881,21 @@ fn tools() -> &'static [Tool] {
                 call: |args| send(Method::DELETE, format!("/v1/library/songs/{}/karaoke", segment(&text(args, "song_id")?)), json!({})),
             },
             Tool {
+                name: "lyrics_recognise",
+                description: "The lyrics a library song or an audio file on this computer sings, heard by the recogniser chosen for karaoke (Settings - Karaoke) and laid out in lines. Give song_id or path.",
+                schema: || object(json!({ "song_id": { "type": "string" }, "path": { "type": "string" }, "language": { "type": "string" } }), &[]),
+                call: |args| {
+                    use base64::Engine;
+                    if let Some(song_id) = args.get("song_id").and_then(Value::as_str) {
+                        return post("/v1/lyrics/recognise".into(), json!({ "song_id": song_id, "language": args.get("language") }));
+                    }
+                    let path = PathBuf::from(text(args, "path")?);
+                    let bytes = std::fs::read(&path).map_err(|error| format!("read {}: {error}", path.display()))?;
+                    let format = path.extension().and_then(|value| value.to_str()).unwrap_or("wav").to_lowercase();
+                    post("/v1/lyrics/recognise".into(), json!({ "audio_base64": base64::engine::general_purpose::STANDARD.encode(bytes), "audio_format": format, "audio_name": file_name(&path), "language": args.get("language") }))
+                },
+            },
+            Tool {
                 name: "separator_status",
                 description: "The stem separator: whether its model and runtime are installed, and download progress.",
                 schema: nothing,
@@ -2987,6 +3002,7 @@ mod tests {
             "openrouter_complete",
             "openrouter_cover",
             "openrouter_transcribe",
+            "lyrics_recognise",
             "assistant_write",
             "assistant_sections",
             "assistant_request_answer",
