@@ -441,7 +441,6 @@ export const ru = {
     modelDescBf16: '4B BF16, компактная',
     modelDescMerge: '4B SFT+Turbo мерж, комьюнити',
     inQueue: 'в очереди',
-    uploadForCover: 'Загрузить аудио для Cover / Remix',
     samplerMode: 'Сэмплер',
     mp3BitrateLabel: 'Битрейт MP3',
     mp3SampleRateLabel: 'Частота дискр.',
@@ -695,7 +694,6 @@ export const ru = {
     dropToUseAudio: 'Перетащите для использования аудио',
     dropToUpload: 'Перетащите для загрузки',
     usingAsReference: 'Используется как референс',
-    usingAsCover: 'Используется как кавер',
     uploadingAsReference: 'Загрузка как референс',
     uploadingAsCover: 'Загрузка как кавер',
 
@@ -955,7 +953,6 @@ export const ru = {
 
     // Reference Modal
     referenceModalTitle: 'Референс',
-    coverModalTitle: 'Кавер',
     referenceModalDescription: 'Создание песен на основе референсного трека',
     coverModalDescription: 'Преобразование существующего трека в новую версию',
     uploadAudio: 'Загрузить аудио',

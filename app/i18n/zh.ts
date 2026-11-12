@@ -437,7 +437,6 @@ export const zh = {
     modelDescBf16: '4B BF16，紧凑',
     modelDescMerge: '4B SFT+Turbo 合并, 社区',
     inQueue: '排队中',
-    uploadForCover: '上传音频进行翻唱 / 混音',
     samplerMode: '采样器',
     mp3BitrateLabel: 'MP3 比特率',
     mp3SampleRateLabel: '采样率',
@@ -691,7 +690,6 @@ export const zh = {
     dropToUseAudio: '拖放以使用音频',
     dropToUpload: '拖放以上传',
     usingAsReference: '用作参考',
-    usingAsCover: '用作翻唱',
     uploadingAsReference: '上传为参考',
     uploadingAsCover: '上传为翻唱',
 
@@ -951,7 +949,6 @@ export const zh = {
 
     // Reference Modal
     referenceModalTitle: '参考音频',
-    coverModalTitle: '翻唱音频',
     referenceModalDescription: '基于参考音轨创作歌曲',
     coverModalDescription: '将现有音轨转换为新版本',
     uploadAudio: '上传音频',

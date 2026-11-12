@@ -437,7 +437,6 @@ export const ko = {
     modelDescBf16: '4B BF16, 컴팩트',
     modelDescMerge: '4B SFT+Turbo 병합, 커뮤니티',
     inQueue: '대기 중',
-    uploadForCover: '커버 / 리믹스를 위해 오디오 업로드',
     samplerMode: '샘플러',
     mp3BitrateLabel: 'MP3 비트레이트',
     mp3SampleRateLabel: '샘플 레이트',
@@ -691,7 +690,6 @@ export const ko = {
     dropToUseAudio: '드롭하여 오디오 사용',
     dropToUpload: '드롭하여 업로드',
     usingAsReference: '참조로 사용',
-    usingAsCover: '커버로 사용',
     uploadingAsReference: '참조로 업로드',
     uploadingAsCover: '커버로 업로드',
 
@@ -951,7 +949,6 @@ export const ko = {
 
     // Reference Modal
     referenceModalTitle: '참조 음악',
-    coverModalTitle: '커버 음악',
     referenceModalDescription: '참조 트랙에서 영감을 받은 곡 만들기',
     coverModalDescription: '기존 트랙을 새로운 버전으로 변환',
     uploadAudio: '오디오 업로드',

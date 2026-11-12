@@ -437,7 +437,6 @@ export const ja = {
   modelDescBf16: '4B BF16、コンパクト',
   modelDescMerge: '4B SFT+Turbo マージ、コミュニティ',
   inQueue: 'キュー内',
-  uploadForCover: 'カバー / リミックス用にオーディオをアップロード',
   samplerMode: 'サンプラー',
   mp3BitrateLabel: 'MP3 ビットレート',
   mp3SampleRateLabel: 'サンプルレート',
@@ -691,7 +690,6 @@ export const ja = {
   dropToUseAudio: 'ドロップしてオーディオを使用',
   dropToUpload: 'ドロップしてアップロード',
   usingAsReference: '参照として使用',
-  usingAsCover: 'カバーとして使用',
   uploadingAsReference: '参照としてアップロード',
   uploadingAsCover: 'カバーとしてアップロード',
 
@@ -951,7 +949,6 @@ export const ja = {
 
   // Reference Modal
   referenceModalTitle: 'リファレンス',
-  coverModalTitle: 'カバー',
   referenceModalDescription: 'リファレンストラックに触発された曲を作成',
   coverModalDescription: '既存のトラックを新しいバージョンに変換',
   uploadAudio: 'オーディオをアップロード',

@@ -440,7 +440,6 @@ export const en = {
     modelDescBf16: '4B BF16, compact',
     modelDescMerge: '4B SFT+Turbo merge, community',
     inQueue: 'in queue',
-    uploadForCover: 'Upload audio for Cover / Remix',
     samplerMode: 'Sampler',
     mp3BitrateLabel: 'MP3 Bitrate',
     mp3SampleRateLabel: 'Sample Rate',
@@ -694,7 +693,6 @@ export const en = {
     dropToUseAudio: 'Drop to use audio',
     dropToUpload: 'Drop to upload',
     usingAsReference: 'Using as Reference',
-    usingAsCover: 'Using as Cover',
     uploadingAsReference: 'Uploading as Reference',
     uploadingAsCover: 'Uploading as Cover',
 
@@ -954,7 +952,6 @@ export const en = {
 
     // Reference Modal
     referenceModalTitle: 'Reference',
-    coverModalTitle: 'Cover',
     referenceModalDescription: 'Create songs inspired by a reference track',
     coverModalDescription: 'Transform an existing track into a new version',
     uploadAudio: 'Upload audio',
