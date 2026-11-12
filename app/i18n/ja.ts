@@ -1426,6 +1426,7 @@ export const ja = {
     setupIntro: '検証済みの 5 コンポーネント minimaxmusic.cpp プロファイルを 1 つダウンロードします。詳細ビルドでは LM、深度デコーダー、条件エンコーダー、DiT、ボコーダーが各 1 つ必要で、エンジンは不完全な組み合わせを拒否します。',
     recommendedForMachine: 'このマシンの推奨:',
     recommendedOnVulkan: 'エンジンは Vulkan でこのカードを使って計算します',
+    songsOnProcessor: '計算に使えるグラフィックカードがないため、曲はプロセッサで作られ、何倍も時間がかかります：数十分から数時間。単体のグラフィックカード（NVIDIA、AMD と Intel は Vulkan 経由）か OpenRouter を使うと速くなります。',
     recommendedFallback: '検出された GPU に合うプロファイルを事前選択しました',
     setupResumable: 'ダウンロードは再開可能で、各コンポーネントは生成を有効にする前にチェックサム検証されます。',
     hardwarePreset: 'ハードウェアプリセット',

@@ -45,6 +45,8 @@ pub struct Hardware {
     pub has_gpu: bool,
     /// The card is an AMD or Intel one the engine reaches through Vulkan, not NVIDIA's CUDA or Apple's Metal.
     pub vulkan: bool,
+    /// No card the songs are computed on: none at all, or one with less memory than the smallest local set needs.
+    pub on_processor: bool,
     pub recommended: &'static str,
     pub reason: String,
 }
@@ -96,12 +98,20 @@ fn probe() -> &'static Hardware {
         if vulkan {
             reason.push_str("; the engine computes on it through Vulkan");
         }
-        Hardware { gpu_name, total_vram_gb, total_ram_gb, has_gpu, vulkan, recommended, reason }
+        let on_processor = computes_on_processor(total_vram_gb);
+        Hardware { gpu_name, total_vram_gb, total_ram_gb, has_gpu, vulkan, on_processor, recommended, reason }
     })
 }
 
 pub fn hardware() -> Hardware {
     probe().clone()
+}
+
+/// Whether songs are computed on the processor: no card, or a card below the smallest local set (built-in graphics);
+/// a Mac computes on Metal.
+fn computes_on_processor(total_vram_gb: f64) -> bool {
+    let smallest = VRAM_TIERS.iter().map(|(_, _, tier)| *tier).fold(f64::INFINITY, f64::min);
+    !cfg!(target_os = "macos") && total_vram_gb < smallest
 }
 
 /// The local presets with the set each installs and the VRAM its tier needs.
@@ -523,6 +533,17 @@ mod tests {
         let sixteen = "\r\nHKEY_LOCAL_MACHINE\\X\\0000\r\n    HardwareInformation.qwMemorySize    REG_QWORD    0x400000000\r\n";
         let (name, vram) = best_adapter(radeon, sixteen, |name| !is_nvidia(name)).unwrap();
         assert_eq!(recommend_for_hardware(&name, vram, 64.0, |_| 13_000_000_000).0, "native-quality", "16 GB of an AMD card sizes the set as on Linux");
+    }
+
+    /// Songs are computed on the processor without a card and on built-in graphics below the smallest set; the window
+    /// says so then.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn songs_go_to_the_processor_without_a_card_or_on_built_in_graphics() {
+        assert!(computes_on_processor(0.0));
+        assert!(computes_on_processor(2.0), "built-in graphics with 2 GB");
+        assert!(!computes_on_processor(8.0), "an 8 GB card holds the smallest set");
+        assert!(!computes_on_processor(24.0));
     }
 
     #[test]

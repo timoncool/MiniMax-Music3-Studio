@@ -1426,6 +1426,7 @@ export const zh = {
     setupIntro: '下载一个完整且经过校验的五组件 minimaxmusic.cpp 配置。高级构建需要各一个兼容的 LM、深度解码器、条件编码器、DiT 和声码器；引擎会拒绝不完整的组合。',
     recommendedForMachine: '针对本机推荐：',
     recommendedOnVulkan: '引擎通过 Vulkan 在其上运算',
+    songsOnProcessor: '没有可用于运算的显卡，歌曲将在处理器上生成，慢很多倍：数十分钟乃至数小时。使用独立显卡（NVIDIA；AMD 和 Intel 通过 Vulkan）或通过 OpenRouter 会更快。',
     recommendedFallback: '已预选与检测到的 GPU 匹配的配置',
     setupResumable: '下载可续传，每个组件在启用生成前都会校验哈希。',
     hardwarePreset: '硬件预设',

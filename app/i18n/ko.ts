@@ -1426,6 +1426,7 @@ export const ko = {
     setupIntro: '검증된 5개 구성 요소의 minimaxmusic.cpp 프로필 하나를 내려받습니다. 고급 빌더는 호환되는 LM, 깊이 디코더, 조건 인코더, DiT, 보코더를 각각 하나씩 요구하며 엔진은 불완전한 세트를 거부합니다.',
     recommendedForMachine: '이 컴퓨터 권장:',
     recommendedOnVulkan: '엔진은 Vulkan으로 이 카드에서 계산합니다',
+    songsOnProcessor: '계산할 그래픽 카드가 없어 곡이 프로세서에서 만들어지며, 몇 배나 오래 걸립니다: 수십 분에서 몇 시간. 별도 그래픽 카드(NVIDIA, AMD와 Intel은 Vulkan)나 OpenRouter를 쓰면 더 빠릅니다.',
     recommendedFallback: '감지된 GPU 에 맞는 프로필이 미리 선택되었습니다',
     setupResumable: '다운로드는 이어받을 수 있으며 각 구성 요소는 생성 활성화 전에 체크섬으로 검증됩니다.',
     hardwarePreset: '하드웨어 프리셋',
