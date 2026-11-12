@@ -98,6 +98,9 @@ pub struct Candidate {
     pub downloaded: u64,
     /// What an earlier release left of it: the URL its record names, or nothing when its files lie there unrecorded.
     pub earlier: Option<String>,
+    /// Why it is downloaded, when that is not its own row of the table of changes: a download one part shares with
+    /// another (audio.cpp's server, karaoke's and the stems') says the part it comes for.
+    pub reason: Option<&'static str>,
 }
 
 /// A leftover of former releases, by the name the table of changes knows it, and its files and folders.
@@ -184,7 +187,7 @@ fn rows(candidates: Vec<Candidate>, default_reason: &'static str) -> Vec<Row> {
             row.download += left;
             continue;
         }
-        let code = reason_of(candidate.id, default_reason);
+        let code = candidate.reason.unwrap_or_else(|| reason_of(candidate.id, default_reason));
         rows.push(Row {
             id: key,
             part: candidate.part,
@@ -306,7 +309,15 @@ mod tests {
             bytes: 100,
             downloaded: 40,
             earlier: earlier.map(String::from),
+            reason: None,
         }
+    }
+
+    #[test]
+    fn a_shared_download_says_the_part_it_comes_for() {
+        let server = |reason| Candidate { id: "audiocpp-cpu", model: false, relative_path: "runtime/audiocpp-cpu.zip", reason, ..candidate("audiocpp-cpu", false, "", None) };
+        assert_eq!(rows(vec![server(None)], "newer")[0].reason_code, "crisperwhisper");
+        assert_eq!(rows(vec![server(Some("demucs-audiocpp"))], "newer")[0].reason_code, "demucs-audiocpp");
     }
 
     #[test]
