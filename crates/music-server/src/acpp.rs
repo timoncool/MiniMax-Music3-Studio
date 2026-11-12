@@ -710,6 +710,24 @@ mod tests {
         }
     }
 
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_linux_cuda_build_lays_every_library_its_server_loads_beside_it() {
+        for (build, libraries) in [
+            (Build::Cuda13, ["libcudart.so.13", "libcublas.so.13", "libcublasLt.so.13", "libcufft.so.12"]),
+            (Build::Cuda12, ["libcudart.so.12", "libcublas.so.12", "libcublasLt.so.12", "libcufft.so.11"]),
+        ] {
+            let downloads: Vec<&Asset> = server_ids(build).iter().map(|id| asset(id).expect("every id of a build is a download")).collect();
+            for library in libraries {
+                assert!(downloads.iter().any(|asset| asset.pick.contains(&library)), "{build:?} loads {library}, which nothing downloads");
+            }
+            for download in &downloads {
+                assert_eq!(download.unzip_into, Some(build.folder()), "{} lands beside the {build:?} server", download.id);
+                assert!(crate::pin_sha::sha256(download.url).is_some(), "{} names the SHA-256 of its pin", download.id);
+            }
+        }
+    }
+
     #[test]
     fn a_processor_choice_runs_the_processor_build() {
         if Build::for_this_mac().is_none() {

@@ -51,6 +51,7 @@ const PINNED: &[(&str, &str)] = &[
     ("https://github.com/microsoft/onnxruntime/releases/download/v1.31.1/onnxruntime-linux-x64-1.31.1.tgz", "c849e36a1ef3e22d4ff217b9d1ce4a3cf5b9467b975610913ae959ad5b16bdc9"),
     ("https://github.com/microsoft/onnxruntime/releases/download/v1.31.1/onnxruntime-osx-arm64-1.31.1.tgz", "2e1344a1926ee50eb25b38153cb6992c3567515aef0e677a1a520a1798896d6f"),
     ("https://github.com/microsoft/onnxruntime/releases/download/v1.31.1/onnxruntime-win-x64-1.31.1.zip", "5869e26bb25314375f2d5ef1877e3ea06b1543d6c710e6e4a1ec2f7177ab4b2c"),
+    ("https://github.com/mosynthkey/beat_this_cpp/raw/07ab790a9ec2eda8093d52d249e3ec4f0510ee72/onnx/beat_this.onnx", "c5c1466e08abdb03fdeb50668a06f244b787d564c212490482231a9cfbe9ccbd"),
     ("https://github.com/timoncool/YuE2-Studio/releases/download/hotstep-tools-08782e83/ace-caption-windows-x64.zip", "290430ed6b971c4a8e858eed6b972b1e377e2fcd38de14f457c71aed1b610194"),
     ("https://github.com/timoncool/YuE2-Studio/releases/download/hotstep-tools-08782e83/hotstep-tools-cuda-windows-x64.zip", "d1d5c86f84d3591062d321d7705bc1671c6f43110e3ab513ddb7decc14697a31"),
     ("https://huggingface.co/aaatmy/skey-onnx/resolve/c04b6a2bc1d82e50b46d8669560d056f3a2344ab/skey.onnx", "50bac66d5b02868afad07a0b159f08495cc3f5d8492654587e828ed4686412b1"),
@@ -148,6 +149,7 @@ mod tests {
         let mut urls: Vec<&str> = Vec::new();
         urls.extend(crate::lyrics_sync::assets().iter().map(|asset| asset.url));
         urls.extend(crate::engine_runtime::ASSETS.iter().map(|asset| asset.url));
+        urls.extend(crate::acpp::ASSETS.iter().map(|asset| asset.url));
         urls.extend(crate::assistant_runtime::ASSETS.iter().map(|asset| asset.url));
         urls.extend([crate::separation::MODEL.url, crate::separation::ROFORMER_MODEL.url]);
         urls.extend([true, false].into_iter().filter_map(crate::separation::Separator::roformer_engine).map(|asset| asset.url));
@@ -177,7 +179,7 @@ mod tests {
 
     #[test]
     fn every_picked_hash_is_of_a_file_a_download_picks() {
-        let downloads: Vec<&crate::downloads::Asset> = crate::lyrics_sync::assets().iter().chain(crate::engine_runtime::ASSETS).collect();
+        let downloads: Vec<&crate::downloads::Asset> = crate::lyrics_sync::assets().iter().chain(crate::engine_runtime::ASSETS).chain(crate::acpp::ASSETS).collect();
         for (url, name, sha256) in PICKED {
             assert_eq!(sha256.len(), 64, "{name}");
             if let Some(asset) = downloads.iter().find(|asset| asset.url == *url) {
