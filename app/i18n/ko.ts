@@ -188,7 +188,7 @@ export const ko = {
     dismiss: '닫기',
     cancelGeneration: '생성 취소',
     cancelAll: '모두 취소',
-    resetGeneration: 'GPU 리셋',
+    dismissAll: '모두 지우기',
     dismissStopped: '지우기',
     schedulerType: '스케줄러',
     dcwEnabledLabel: 'DCW 품질 보정',

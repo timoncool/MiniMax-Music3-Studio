@@ -189,7 +189,7 @@ export const en = {
     dismiss: 'Dismiss',
     cancelGeneration: 'Cancel generation',
     cancelAll: 'Cancel All',
-    resetGeneration: 'Reset GPU',
+    dismissAll: 'Dismiss all',
     dismissStopped: 'Dismiss',
     schedulerType: 'Scheduler',
     dcwEnabledLabel: 'DCW Quality Correction',

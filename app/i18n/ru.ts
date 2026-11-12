@@ -190,7 +190,7 @@ export const ru = {
     dismiss: 'Закрыть',
     cancelGeneration: 'Отменить генерацию',
     cancelAll: 'Отменить всё',
-    resetGeneration: 'Сбросить GPU',
+    dismissAll: 'Убрать все',
     dismissStopped: 'Убрать',
     schedulerType: 'Шедулер',
     dcwEnabledLabel: 'DCW коррекция качества',

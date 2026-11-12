@@ -9,7 +9,7 @@ const queries = new QueryClient();
 vi.mock('../context/I18nContext', () => ({ useI18n: () => ({ language: 'en', t: (key: string) => key }) }));
 vi.mock('../context/AuthContext', () => ({ useAuth: () => ({ user: null }) }));
 
-const { SongItem } = await import('./SongList');
+const { SongItem, CancelAllButton } = await import('./SongList');
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root;
@@ -75,5 +75,21 @@ describe('a stopped card', () => {
     expect(dismiss).toBeDefined();
     act(() => { dismiss!.click(); });
     expect(onResetJob).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the stop-all button over the list', () => {
+  it('stops every song, then offers to clear the stopped ones, named by what it does', () => {
+    const onCancelAll = vi.fn();
+    const onResetAll = vi.fn();
+    act(() => root.render(<CancelAllButton activeJobCount={2} onCancelAll={onCancelAll} onResetAll={onResetAll} />));
+    const button = host.querySelector('button')!;
+    expect(button.textContent).toBe('cancelAll (2)');
+    act(() => { button.click(); });
+    expect(onCancelAll).toHaveBeenCalledTimes(1);
+    expect(button.textContent).toBe('dismissAll (2)');
+    act(() => { button.click(); });
+    expect(onResetAll).toHaveBeenCalledTimes(1);
+    expect(button.textContent).toBe('cancelAll (2)');
   });
 });

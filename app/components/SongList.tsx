@@ -134,6 +134,34 @@ const createDragPreview = (element: HTMLElement) => {
 /** A generation's card rather than a song: being made, or stopped and waiting to be cleared. */
 const isCard = (song: Song) => Boolean(song.isGenerating) || song.stage === 'cancelled';
 
+/** Stops every running song; pressed again, stops them once more and clears the stopped ones from the list. */
+export const CancelAllButton: React.FC<{ activeJobCount: number; onCancelAll: () => void; onResetAll?: () => void }> = ({ activeJobCount, onCancelAll, onResetAll }) => {
+    const { t } = useI18n();
+    const [cancelStage, setCancelStage] = useState<'cancel' | 'reset'>('cancel');
+    useEffect(() => { if (activeJobCount === 0) setCancelStage('cancel'); }, [activeJobCount]);
+    return (
+        <button
+            onClick={() => {
+                if (cancelStage === 'cancel') {
+                    onCancelAll();
+                    setCancelStage('reset');
+                } else {
+                    onResetAll?.();
+                    setCancelStage('cancel');
+                }
+            }}
+            className={`border text-xs font-bold px-4 py-2.5 rounded-lg flex items-center gap-2 transition-all select-none ${
+                cancelStage === 'reset'
+                    ? 'bg-red-500/20 hover:bg-red-500/30 border-red-500/50 text-red-400 animate-pulse'
+                    : 'bg-red-500/10 hover:bg-red-500/20 border-red-500/30 text-red-500'
+            }`}
+        >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+            {cancelStage === 'reset' ? t('dismissAll') : t('cancelAll')} ({activeJobCount})
+        </button>
+    );
+};
+
 export const SongList: React.FC<SongListProps> = ({
     songs,
     currentSong,
@@ -185,9 +213,6 @@ export const SongList: React.FC<SongListProps> = ({
     const [activeFilters, setActiveFilters] = useState<Set<FilterType>>(new Set());
     const [isFilterOpen, setIsFilterOpen] = useState(false);
     const [isSelecting, setIsSelecting] = useState(false);
-    const [cancelStage, setCancelStage] = useState<'cancel' | 'reset'>('cancel');
-    // Reset cancel stage when no jobs left
-    useEffect(() => { if (activeJobCount === 0) setCancelStage('cancel'); }, [activeJobCount]);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const filterRef = useRef<HTMLDivElement>(null);
 
@@ -546,25 +571,7 @@ export const SongList: React.FC<SongListProps> = ({
                         </button>
 
                         {activeJobCount > 0 && onCancelAll && (
-                            <button
-                                onClick={() => {
-                                    if (cancelStage === 'cancel') {
-                                        onCancelAll();
-                                        setCancelStage('reset');
-                                    } else {
-                                        onResetAll?.();
-                                        setCancelStage('cancel');
-                                    }
-                                }}
-                                className={`border text-xs font-bold px-4 py-2.5 rounded-lg flex items-center gap-2 transition-all select-none ${
-                                    cancelStage === 'reset'
-                                        ? 'bg-red-500/20 hover:bg-red-500/30 border-red-500/50 text-red-400 animate-pulse'
-                                        : 'bg-red-500/10 hover:bg-red-500/20 border-red-500/30 text-red-500'
-                                }`}
-                            >
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                                {cancelStage === 'reset' ? t('resetGeneration') : t('cancelAll')} ({activeJobCount})
-                            </button>
+                            <CancelAllButton activeJobCount={activeJobCount} onCancelAll={onCancelAll} onResetAll={onResetAll} />
                         )}
                     </div>
 

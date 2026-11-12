@@ -188,7 +188,7 @@ export const ja = {
   dismiss: '閉じる',
   cancelGeneration: '生成をキャンセル',
   cancelAll: 'すべてキャンセル',
-  resetGeneration: 'GPU リセット',
+  dismissAll: 'すべて消す',
   dismissStopped: '消す',
   schedulerType: 'スケジューラ',
   dcwEnabledLabel: 'DCW 品質補正',

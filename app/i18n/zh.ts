@@ -188,7 +188,7 @@ export const zh = {
     dismiss: '关闭',
     cancelGeneration: '取消生成',
     cancelAll: '取消全部',
-    resetGeneration: '重置 GPU',
+    dismissAll: '全部移除',
     dismissStopped: '移除',
     schedulerType: '调度器',
     dcwEnabledLabel: 'DCW 质量校正',
