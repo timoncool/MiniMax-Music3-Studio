@@ -118,7 +118,7 @@ mod tests {
     #[test]
     fn every_download_names_the_sha256_of_its_pin() {
         let mut urls: Vec<&str> = Vec::new();
-        urls.extend(crate::lyrics_sync::ASSETS.iter().map(|asset| asset.url));
+        urls.extend(crate::lyrics_sync::assets().iter().map(|asset| asset.url));
         urls.extend(crate::engine_runtime::ASSETS.iter().map(|asset| asset.url));
         urls.extend(crate::assistant_runtime::ASSETS.iter().map(|asset| asset.url));
         urls.extend([crate::separation::MODEL.url, crate::separation::ROFORMER_MODEL.url]);

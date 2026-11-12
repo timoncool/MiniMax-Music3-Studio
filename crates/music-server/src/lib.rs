@@ -56,6 +56,7 @@ mod engine_log;
 mod song_errors;
 mod update_screen;
 mod retired;
+mod acpp;
 
 use song_errors::SongError;
 
@@ -6042,7 +6043,7 @@ fn karaoke_variant_bytes(id: &str) -> Option<u64> {
     let files: Vec<&'static lyrics_sync::Asset> = if [lyrics_sync::PARAKEET_V3, lyrics_sync::PARAKEET_ULTRA].contains(&id) {
         lyrics_sync::asset(id).into_iter().collect()
     } else if id == lyrics_sync::CRISPERWHISPER_MODEL {
-        lyrics_sync::ASSETS.iter().filter(|asset| asset.relative_path.starts_with("models/crisperwhisper2-turbo/")).collect()
+        lyrics_sync::assets().iter().filter(|asset| asset.relative_path.starts_with("models/crisperwhisper2-turbo/")).collect()
     } else {
         return None;
     };
@@ -7903,7 +7904,7 @@ fn update_catalogue(part: update_screen::Part) -> Vec<&'static downloads::Asset>
     use update_screen::Part;
     let mut assets: Vec<&'static downloads::Asset> = match part {
         Part::Engine => engine_runtime::ASSETS.iter().collect(),
-        Part::Karaoke => lyrics_sync::ASSETS.iter().collect(),
+        Part::Karaoke => lyrics_sync::assets().iter().collect(),
         Part::Separation => std::iter::once(&separation::MODEL).chain(roformer_set(true)).chain(roformer_set(false)).collect(),
         Part::Midi => vec![midi::tool_asset()],
         Part::Training => training::pack().iter().collect(),

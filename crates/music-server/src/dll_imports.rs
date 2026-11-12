@@ -453,7 +453,7 @@ mod tests {
         }
 
         let karaoke_asset = |id: &str| -> &'static crate::downloads::Asset {
-            crate::lyrics_sync::ASSETS
+            crate::lyrics_sync::assets()
                 .iter()
                 .find(|asset| asset.kind == AssetKind::Runtime && asset.id == id)
                 .unwrap_or_else(|| panic!("{id} is no longer a karaoke runtime"))
