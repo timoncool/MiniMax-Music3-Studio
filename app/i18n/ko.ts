@@ -1787,6 +1787,7 @@ export const ko = {
     karaokeInstrumental: '이 트랙에는 가사가 없어 타이밍을 만들 수 없습니다.',
     karaokeNoMatch: '오디오에서 이 가사의 단어를 듣지 못했습니다. 가사가 이 트랙의 것인지 확인하거나 설정에서 다른 인식 모델을 사용해 보세요.',
     karaokeNoWords: "이 트랙에서 불린 가사를 알아들을 수 없어 타이밍을 만들 수 없습니다. 보컬이 묻혔거나 불분명하거나 연주곡일 수 있습니다.",
+    songInTheBin: '"{title}"은(는) 휴지통에 있습니다. 사용하려면 라이브러리 → 휴지통에서 복원하세요.',
     karaokeDownloading: '필요한 인식 모델을 내려받는 중입니다. 끝나면 가사 타이밍을 만듭니다.',
     karaokeModelMissing: '선택한 인식 모델을 내려받지 못했습니다. 연결을 확인하거나 설정에서 다른 것을 선택하세요.',
     karaokeNoLines: '파일에서 시간이 붙은 줄을 찾지 못했습니다. .srt, .ass, .ssa, .lrc를 읽을 수 있습니다.',
