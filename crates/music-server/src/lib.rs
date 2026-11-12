@@ -1297,16 +1297,14 @@ pub async fn serve() -> anyhow::Result<()> {
                             }
                         }
                     }
-                    match restart_engine(&state).await {
-                        Ok(()) => complained = false,
-                        Err(error) => {
-                            // Say it once per failure, not once every few
-                            // seconds: a card with too little memory would
-                            // otherwise fill the log with the same line.
-                            if !complained {
-                                studio_log!("the local engine did not start: {error}");
-                                complained = true;
-                            }
+                    let started = start_engine_again(&state).await;
+                    // Said and counted once per failure, not once every few
+                    // seconds: a card with too little memory would otherwise
+                    // fill the log, and the hub would count the time it lay down.
+                    if failure_is_new(&mut complained, started.is_ok()) {
+                        if let Err(error) = &started {
+                            studio_log!("the local engine did not start: {error}");
+                            count_engine_failure(&state, error);
                         }
                     }
                 }
@@ -4673,11 +4671,27 @@ async fn engine_at_work(state: &AppState) -> bool {
 /// that names no path on the computer.
 async fn restart_engine(state: &AppState) -> Result<(), String> {
     let started = start_engine_again(state).await;
-    if let (Err(error), Some(hub)) = (&started, &state.hub) {
+    if let Err(error) = &started {
+        count_engine_failure(state, error);
+    }
+    started
+}
+
+fn count_engine_failure(state: &AppState, error: &str) {
+    if let Some(hub) = &state.hub {
         hub.count("engine_failed", 1);
         hub.failed("engine", &engine_failure_code(error));
     }
-    started
+}
+
+/// Whether the watchdog's start that just ended is a failure not yet said: the first of a run of failed starts is,
+/// the ones after it are not until a start succeeds.
+fn failure_is_new(complained: &mut bool, started: bool) -> bool {
+    if started {
+        *complained = false;
+        return false;
+    }
+    !std::mem::replace(complained, true)
 }
 
 /// What an engine that did not start died of, for the hub: the exit code and Windows' record of the fault when there
@@ -9989,6 +10003,14 @@ mod tests {
         let card = missing_chosen_card(Some(3), &[(0, "NVIDIA GeForce RTX 4090".into(), 24.0)]).expect("card 3 is not there");
         assert_eq!(engine_failure_code(&card), "chosen card not present");
         assert_eq!(engine_failure_code("something new"), "other");
+    }
+
+
+    #[test]
+    fn the_watchdog_counts_a_failed_engine_once_until_it_starts_again() {
+        let mut complained = false;
+        let counted: Vec<bool> = [false, false, false, true, false, false].iter().map(|&started| failure_is_new(&mut complained, started)).collect();
+        assert_eq!(counted, [true, false, false, false, true, false], "three failed restarts are one failure; after a start the next failure is a second");
     }
 
     #[test]
