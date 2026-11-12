@@ -430,6 +430,12 @@ pub fn parakeet_model(variant: Option<&str>) -> &'static dub_tcpp::Model {
     dub_tcpp::model(id).expect("the shared binding carries both Parakeets")
 }
 
+/// The transcribe.cpp builds loaded in this process, by folder, with the release they were loaded from.
+fn loaded_engines() -> &'static std::sync::Mutex<std::collections::HashMap<&'static str, String>> {
+    static LOADED: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<&'static str, String>>> = std::sync::OnceLock::new();
+    LOADED.get_or_init(Default::default)
+}
+
 /// The asset of the model the dropdown names.
 pub fn parakeet_model_asset(variant: Option<&str>) -> &'static str {
     if variant == Some(PARAKEET_ULTRA) { PARAKEET_ULTRA } else { PARAKEET_V3 }
@@ -495,6 +501,9 @@ pub struct SyncStatus {
     pub installed_models: Vec<String>,
     pub assets: Vec<crate::downloads::AssetStatus>,
     pub active_download: Option<crate::downloads::DownloadProgress>,
+    /// The recogniser's engine was updated while this process holds the earlier one: the new one runs from the next
+    /// start of the studio.
+    pub restart_to_apply: bool,
 }
 
 pub struct LyricsSync {
@@ -590,8 +599,6 @@ impl LyricsSync {
         [PARAKEET_V3, PARAKEET_ULTRA].into_iter().find(|model| self.parakeet_ready(runtime, Some(model)))
     }
 
-    /// The loaded Parakeet of this machine's build and the dropdown's model: one load serves every track of a run;
-    /// the run unloads it after, so the card is the music engine's again.
     fn load_parakeet(&self, runtime: OnnxFlavour, variant: Option<&str>) -> Result<(std::sync::Arc<std::sync::Mutex<dub_tcpp::TcppAsr>>, &'static dub_tcpp::Model)> {
         let build = parakeet_build(runtime).ok_or_else(|| anyhow!("transcribe.cpp has no build for this system: choose Whisper"))?;
         let root = self.downloader.root().join("models");
@@ -601,7 +608,27 @@ impl LyricsSync {
             self.link_cuda13(&engine, "transcribe.cpp")?;
         }
         let asr = dub_tcpp::shared(&engine, &dub_tcpp::model_path(&root, model)).map_err(|error| anyhow!("load Parakeet: {error}"))?;
+        // the library stays in the process until it ends: an install over it is used from the next start
+        if let Some(record) = self.engine_record(build).and_then(|record| crate::install_record::read(&record)) {
+            loaded_engines().lock().unwrap_or_else(|poisoned| poisoned.into_inner()).entry(build.dir()).or_insert(record.url);
+        }
         Ok((asr, model))
+    }
+
+    /// The install record of a transcribe.cpp build's archive.
+    fn engine_record(&self, build: dub_tcpp::Build) -> Option<PathBuf> {
+        assets().iter().find(|asset| asset.unzip_into == Some(build.dir())).map(|asset| self.downloader.record_of(asset))
+    }
+
+    /// A transcribe.cpp build this process has loaded whose files on disk are now another release's: the process keeps
+    /// the one it loaded (a loaded build is never unloaded), so the new one runs from the next start of the studio.
+    pub fn restart_to_apply(&self) -> bool {
+        let loaded = loaded_engines().lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone();
+        dub_tcpp::Build::ALL.iter().any(|build| {
+            loaded.get(build.dir()).is_some_and(|url| {
+                self.engine_record(*build).and_then(|record| crate::install_record::read(&record)).is_some_and(|now| now.url != *url)
+            })
+        })
     }
 
     /// `ort` loads this at run time; linking it would tie the build to one
@@ -653,6 +680,7 @@ impl LyricsSync {
             installed_models: self.installed_models().iter().map(|asset| asset.id.to_string()).collect(),
             assets: self.downloader.status_of(assets()),
             active_download: self.downloader.active_for("karaoke").await,
+            restart_to_apply: self.restart_to_apply(),
         }
     }
 
@@ -1386,6 +1414,34 @@ Third");
             assert!(!asset.url.contains("/resolve/main/"), "{} is fetched from a branch: {}", asset.id, asset.url);
         }
     }
+
+    /// Karaoke's engine loaded in this process and installed over: the record says the new release, the process keeps
+    /// the one it loaded, and the window is told it runs from the next start; a file of the record gone from the
+    /// folder makes the install not done.
+    #[test]
+    fn an_engine_installed_over_the_loaded_one_waits_for_a_restart_and_must_be_whole() {
+        let root = tempfile::tempdir().unwrap();
+        let sync = LyricsSync::new(root.path());
+        let build = dub_tcpp::Build::Cpu;
+        let asset = assets().iter().find(|asset| asset.unzip_into == Some(build.dir())).expect("the processor build");
+        let dir = sync.downloader.runtime_dir(build.dir());
+        std::fs::create_dir_all(&dir).unwrap();
+        let files: Vec<PathBuf> = [dub_tcpp::LIBRARY, "ggml-cpu-alderlake.dll"].iter().map(|name| dir.join(name)).collect();
+        for file in &files {
+            std::fs::write(file, b"x").unwrap();
+        }
+        let record = sync.downloader.record_of(asset);
+        crate::install_record::write(&record, "https://example.invalid/engine-0.2.0.zip", "", &files, sync.downloader.root()).unwrap();
+        loaded_engines().lock().unwrap().insert(build.dir(), "https://example.invalid/engine-0.2.0.zip".into());
+        assert!(!sync.restart_to_apply(), "the loaded release is the one on disk");
+        crate::install_record::write(&record, asset.url, "", &files, sync.downloader.root()).unwrap();
+        assert!(sync.restart_to_apply(), "today's release is on disk, the process holds the earlier one");
+        assert!(sync.downloader.is_installed(asset));
+        std::fs::remove_file(&files[1]).unwrap();
+        assert!(!sync.downloader.is_installed(asset), "a file of the record is missing: not installed");
+        loaded_engines().lock().unwrap().remove(build.dir());
+    }
+
 }
 
 #[cfg(test)]
