@@ -974,6 +974,7 @@ pub async fn serve() -> anyhow::Result<()> {
         }
     }
     state.lyrics_sync.set_cuda_libraries(state.engine_runtime.library_dir());
+    register_acpp_models(&state);
     prepare::resume(&state);
     tokio::spawn(resume_unfinished_jobs(state.clone()));
     {
@@ -1710,6 +1711,22 @@ fn acpp_missing_bytes(state: &AppState, build: acpp_server::asset::Build) -> u64
 /// HT-Demucs runs here on `runtime`'s build: its model and that build of audio.cpp's server are downloaded.
 fn htdemucs_installed(state: &AppState, runtime: lyrics_sync::OnnxFlavour) -> bool {
     state.separator.is_installed() && separation_build(runtime).is_ok_and(|build| state.lyrics_sync.acpp().installed(build))
+}
+
+/// Every model audio.cpp's server may carry, registered at start: CrisperWhisper, HT-Demucs and each MuScriptor size.
+/// A config that grows with each tool's first run restarts the server under the run of the tool before it.
+fn register_acpp_models(state: &AppState) {
+    register_acpp_models_of(&state.lyrics_sync, &state.separator, &state.midi);
+}
+
+fn register_acpp_models_of(sync: &lyrics_sync::LyricsSync, separator: &separation::Separator, transcriber: &midi::Transcriber) {
+    let acpp = sync.acpp();
+    sync.register_crisper();
+    let htdemucs = separator.model_path();
+    acpp.register(acpp_server::ModelEntry::htdemucs(acpp::HTDEMUCS, &htdemucs), vec![htdemucs.clone()]);
+    for size in &midi::SIZES {
+        acpp.register(acpp_server::ModelEntry::muscriptor(&acpp::muscriptor_id(size.id), &transcriber.model_dir(size)), transcriber.model_files(size));
+    }
 }
 
 /// Stops a download. What arrived stays on disk: pressing this again later
@@ -7282,9 +7299,9 @@ async fn transcribe_to_midi(state: &AppState, size: &'static midi::Size, audio: 
     let input = decoded.clone().unwrap_or_else(|| audio.to_path_buf());
     let model = state.midi.model_dir(size);
     let id = acpp::muscriptor_id(size.id);
+    let files = state.midi.model_files(size);
     let background = state.clone();
     let result = tokio::task::spawn_blocking(move || -> anyhow::Result<Value> {
-        let files = vec![model.join("config.json"), model.join("model.safetensors")];
         acpp::run(&acpp, build, acpp_server::ModelEntry::muscriptor(&id, &model), files, serde_json::json!({ "audio": input }), &|| midi_stopped(&background))
     })
     .await
@@ -7854,8 +7871,27 @@ fn update_data_root(state: &AppState) -> &std::path::Path {
     state.settings_path.parent().expect("the settings file lies in the data folder")
 }
 
+/// The builds of audio.cpp's server that take the place of what the person used, with the reason the update screen
+/// gives: the stems' when the ONNX HT-Demucs lies there, Audio to MIDI's when HOT-Step's transcriber does and a
+/// MuScriptor size is on disk.
+fn update_acpp_builds(state: &AppState, leftovers: &[update_screen::Leftover], separation: lyrics_sync::OnnxFlavour, options: &EngineOptions) -> Vec<(acpp_server::asset::Build, &'static str)> {
+    let left = |what: &str| leftovers.iter().any(|leftover| leftover.what == what && !leftover.paths.is_empty());
+    let mut builds = Vec::new();
+    if left("htdemucs-onnx") {
+        if let Ok(build) = separation_build(separation) {
+            builds.push((build, "demucs-audiocpp"));
+        }
+    }
+    if left("midi-hotstep") && midi::SIZES.iter().any(|size| state.midi.model_installed(size)) {
+        if let Ok(build) = midi_build(options) {
+            builds.push((build, "midi-audiocpp"));
+        }
+    }
+    builds
+}
+
 /// This release's plan against the disk; it reads files and changes none.
-fn update_plan_now(state: &AppState, karaoke: &lyrics_sync::LyricsSyncConfig, separation: lyrics_sync::OnnxFlavour) -> update_screen::Plan {
+fn update_plan_now(state: &AppState, karaoke: &lyrics_sync::LyricsSyncConfig, separation: lyrics_sync::OnnxFlavour, options: &EngineOptions) -> update_screen::Plan {
     use update_screen::{Candidate, Part};
     let of = |part: Part, asset: &'static downloads::Asset, downloader: &downloads::Downloader, earlier: Option<String>| Candidate {
         part,
@@ -7906,18 +7942,16 @@ fn update_plan_now(state: &AppState, karaoke: &lyrics_sync::LyricsSyncConfig, se
             }
         }
     }
-    // the ONNX HT-Demucs of former releases: its GGUF and audio.cpp's server of the stems' device take its place
-    if leftovers.iter().any(|leftover| leftover.what == "htdemucs-onnx" && !leftover.paths.is_empty()) {
-        if !state.separator.is_installed() {
-            added.push(of(Part::Separation, &separation::MODEL, state.separator.downloader(), None));
-        }
-        if let Ok(build) = separation_build(separation) {
-            let downloader = state.lyrics_sync.downloader();
-            for asset in state.lyrics_sync.acpp().missing(build) {
-                if !updated.iter().chain(added.iter()).any(|row: &Candidate| row.id == asset.id) {
-                    // karaoke's server, downloaded here for the stems
-                    added.push(Candidate { reason: Some("demucs-audiocpp"), ..of(Part::Karaoke, asset, downloader, None) });
-                }
+    // the ONNX HT-Demucs of former releases: its GGUF takes its place
+    if leftovers.iter().any(|leftover| leftover.what == "htdemucs-onnx" && !leftover.paths.is_empty()) && !state.separator.is_installed() {
+        added.push(of(Part::Separation, &separation::MODEL, state.separator.downloader(), None));
+    }
+    // karaoke's server, downloaded here for the tool that replaces what a former release left
+    for (build, reason) in update_acpp_builds(state, &leftovers, separation, options) {
+        let downloader = state.lyrics_sync.downloader();
+        for asset in state.lyrics_sync.acpp().missing(build) {
+            if !updated.iter().chain(added.iter()).any(|row: &Candidate| row.id == asset.id) {
+                added.push(Candidate { reason: Some(reason), ..of(Part::Karaoke, asset, downloader, None) });
             }
         }
     }
@@ -7927,8 +7961,9 @@ fn update_plan_now(state: &AppState, karaoke: &lyrics_sync::LyricsSyncConfig, se
 async fn update_plan(state: &AppState) -> Result<update_screen::Plan, (StatusCode, Json<ApiError>)> {
     let karaoke = state.lyrics_sync_config.read().await.clone();
     let separation = state.separation_config.read().await.runtime;
+    let options = state.engine_options.read().await.clone();
     let state = state.clone();
-    tokio::task::spawn_blocking(move || update_plan_now(&state, &karaoke, separation))
+    tokio::task::spawn_blocking(move || update_plan_now(&state, &karaoke, separation, &options))
         .await
         .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, format!("the update plan was not read: {error}")))
 }
@@ -8024,13 +8059,13 @@ async fn run_update(state: &AppState, rows: &[update_screen::Row]) -> anyhow::Re
     let separation = state.separation_config.read().await.runtime;
     let sync = state.lyrics_sync.clone();
     let data_root = update_data_root(state).to_path_buf();
-    // the CUDA 13 build of the stems' server runs on the engine's cuBLAS 13, which the engine's downloader keeps
-    if retired::leftovers(&data_root).iter().any(|leftover| leftover.what == "htdemucs-onnx" && !leftover.paths.is_empty()) {
-        if let Ok(build) = separation_build(separation) {
-            install_acpp(state, build, "separation").await?;
-        }
+    // the CUDA 13 build of the tools' server runs on the engine's cuBLAS 13, which the engine's downloader keeps
+    let options = state.engine_options.read().await.clone();
+    for (build, reason) in update_acpp_builds(state, &retired::leftovers(&data_root), separation, &options) {
+        install_acpp(state, build, if reason == "midi-audiocpp" { "midi" } else { "separation" }).await?;
     }
     let demucs_ready = htdemucs_installed(state, separation);
+    let midi_ready = !midi::SIZES.iter().any(|size| state.midi.model_installed(size)) || midi_build(&options).is_ok_and(|build| state.lyrics_sync.acpp().installed(build));
     tokio::task::spawn_blocking(move || {
         let mut gone = vec!["parakeet-onnx"];
         if !karaoke_on_whisper(&karaoke) || sync.crisper_ready(karaoke.runtime) {
@@ -8038,6 +8073,9 @@ async fn run_update(state: &AppState, rows: &[update_screen::Row]) -> anyhow::Re
         }
         if demucs_ready {
             gone.push("htdemucs-onnx");
+        }
+        if midi_ready {
+            gone.push("midi-hotstep");
         }
         retired::remove_leftovers(&data_root, &gone);
     })
@@ -9790,6 +9828,20 @@ mod tests {
         let on_vulkan = format!("[studio] ---- starting mm-server ----\n[load] lm backend: vulkan0 (cpu threads: 8)\n{failed}");
         assert!(exhausted_memory_reason(failed, &on_vulkan).expect("memory ran out").to_string().contains("graphics card"), "an AMD or Intel card on Vulkan is a card");
         assert!(exhausted_memory_reason("[load] lm backend: cpu", "[load] lm backend: cpu").is_none());
+    }
+
+    #[test]
+    fn every_tool_model_joins_audiocpps_server_from_the_start() {
+        let root = tempfile::tempdir().unwrap();
+        let sync = lyrics_sync::LyricsSync::new(root.path());
+        let separator = separation::Separator::new(root.path());
+        let transcriber = midi::Transcriber::new(root.path(), sync.acpp());
+        register_acpp_models_of(&sync, &separator, &transcriber);
+        assert_eq!(
+            sync.acpp().registered(),
+            ["crisperwhisper", "htdemucs", "muscriptor-large", "muscriptor-medium", "muscriptor-small"],
+            "a tool whose model joins the config only at its first run restarts the server under another tool's run"
+        );
     }
 
     #[test]

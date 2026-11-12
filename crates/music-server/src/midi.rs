@@ -97,6 +97,11 @@ impl Transcriber {
         self.downloader.root().join("models").join(format!("muscriptor-{}", size.id))
     }
 
+    /// The files a size's folder is complete with, as audio.cpp's server reads it.
+    pub fn model_files(&self, size: &'static Size) -> Vec<PathBuf> {
+        weight_assets(size).iter().map(|asset| self.downloader.path_of(asset)).collect()
+    }
+
     pub fn model_installed(&self, size: &'static Size) -> bool {
         weight_assets(size).iter().all(|asset| self.downloader.is_installed(asset))
     }

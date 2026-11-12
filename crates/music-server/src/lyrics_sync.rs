@@ -918,8 +918,19 @@ impl LyricsSync {
         if !self.crisper_ready(runtime) {
             bail!("CrisperWhisper is not completely downloaded into {}: download it in Settings - Models", model.display());
         }
-        let files = OWN.iter().filter(|asset| asset.relative_path.starts_with(CRISPERWHISPER_DIR)).map(|asset| self.downloader.root().join(asset.relative_path)).collect();
-        self.acpp.with_server(build, acpp_server::ModelEntry::crisperwhisper(CRISPERWHISPER, &model), files, work)
+        self.acpp.with_server(build, acpp_server::ModelEntry::crisperwhisper(CRISPERWHISPER, &model), self.crisper_files(), work)
+    }
+
+    /// The files CrisperWhisper's folder is complete with.
+    fn crisper_files(&self) -> Vec<PathBuf> {
+        OWN.iter().filter(|asset| asset.relative_path.starts_with(CRISPERWHISPER_DIR)).map(|asset| self.downloader.root().join(asset.relative_path)).collect()
+    }
+
+    /// CrisperWhisper among the models audio.cpp's server carries, so the server a tool starts serves karaoke too and
+    /// karaoke's first run does not restart it.
+    pub fn register_crisper(&self) {
+        let model = self.downloader.root().join(CRISPERWHISPER_DIR);
+        self.acpp.register(acpp_server::ModelEntry::crisperwhisper(CRISPERWHISPER, &model), self.crisper_files());
     }
 
     pub fn installed_models(&self) -> Vec<&'static Asset> {

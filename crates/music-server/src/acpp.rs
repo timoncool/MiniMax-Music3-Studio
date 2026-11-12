@@ -406,6 +406,15 @@ impl Acpp {
         known.push(Known { entry, files });
     }
 
+    /// The ids of every registered model, on disk or not.
+    #[cfg(test)]
+    pub fn registered(&self) -> Vec<String> {
+        let known = self.known.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut ids: Vec<String> = known.iter().map(|model| model.entry.id.clone()).collect();
+        ids.sort();
+        ids
+    }
+
     /// The registered models whose files are all on disk now: the server reads each configured model when it starts,
     /// and one missing file would stop all of them.
     fn models_on_disk(&self) -> Vec<ModelEntry> {

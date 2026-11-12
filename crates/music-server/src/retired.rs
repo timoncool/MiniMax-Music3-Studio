@@ -39,6 +39,9 @@ const RETIRED: &[(&str, &str, &[&str])] = &[
     ),
     // the ONNX HT-Demucs of 3.8 and earlier; stems separate on audio.cpp's server
     ("htdemucs-onnx", "HT-Demucs (ONNX)", &["separation/models/htdemucs/htdemucs_6s_fp16.onnx"]),
+    // HOT-Step's MIDI transcriber of its own folder, before the tools shared one in `hotstep`; MuScriptor runs on
+    // audio.cpp's server
+    ("midi-hotstep", "HOT-Step MIDI transcriber", &["midi/runtime"]),
 ];
 
 /// The leftovers under `data_root`, each with the paths of it that are there.
@@ -96,13 +99,21 @@ mod tests {
             fs::create_dir_all(file.parent().unwrap()).unwrap();
             fs::write(file, b"x").unwrap();
         }
-        let onnx =root.path().join("separation/models/htdemucs/htdemucs_6s_fp16.onnx");
+        let onnx = root.path().join("separation/models/htdemucs/htdemucs_6s_fp16.onnx");
         fs::create_dir_all(onnx.parent().unwrap()).unwrap();
         fs::write(&onnx, b"x").unwrap();
         let gguf = root.path().join("separation/models/htdemucs/htdemucs-6stems-f16.gguf");
         fs::write(&gguf, b"x").unwrap();
+        let transcriber = root.path().join("midi/runtime/music-midi");
+        fs::create_dir_all(&transcriber).unwrap();
+        fs::write(transcriber.join("music-midi.exe"), b"x").unwrap();
+        let weights = root.path().join("midi/models/muscriptor-medium/model.safetensors");
+        fs::create_dir_all(weights.parent().unwrap()).unwrap();
+        fs::write(&weights, b"x").unwrap();
         let found: Vec<(&str, usize)> = leftovers(root.path()).iter().map(|leftover| (leftover.what, leftover.paths.len())).collect();
-        assert_eq!(found, vec![("parakeet-onnx", 3), ("faster-whisper", 1), ("htdemucs-onnx", 1)]);
+        assert_eq!(found, vec![("parakeet-onnx", 3), ("faster-whisper", 1), ("htdemucs-onnx", 1), ("midi-hotstep", 1)]);
+        remove_leftovers(root.path(), &["midi-hotstep"]);
+        assert!(!root.path().join("midi/runtime").exists() && weights.is_file(), "the old transcriber goes, MuScriptor's weights stay");
         remove_leftovers(root.path(), &["htdemucs-onnx"]);
         assert!(!onnx.exists() && gguf.is_file(), "the ONNX model goes, the GGUF that replaced it stays");
         remove_leftovers(root.path(), &["parakeet-onnx"]);
