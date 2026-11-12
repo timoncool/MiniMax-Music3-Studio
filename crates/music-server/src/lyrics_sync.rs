@@ -581,15 +581,6 @@ mod libraries {
         &["libonnxruntime_providers_cuda.so", "libcublasLt.so.12", "libcublas.so.12", "libcudart.so.12", "libcufft.so.11", "libcurand.so.10", "libcudnn.so.9"];
 }
 
-/// The CUDA provider's parts, in the order they are used: `karaoke_set` and the
-/// separator build their card path out of these.
-#[cfg(target_os = "macos")]
-pub const CUDA_ASSETS: &[&str] = &[];
-#[cfg(windows)]
-pub const CUDA_ASSETS: &[&str] = &["onnxruntime-cuda", "cuda-cudart", "cuda-cublas", "cuda-cufft", "cuda-cudnn"];
-#[cfg(target_os = "linux")]
-pub const CUDA_ASSETS: &[&str] = &["onnxruntime-cuda", "cuda-cudart", "cuda-cublas", "cuda-cufft", "cuda-curand", "cuda-cudnn"];
-
 /// Everything the DirectML path needs, in the order it is used.
 pub const DIRECTML_ASSETS: [&str; 2] = ["onnxruntime-directml", "directml"];
 
@@ -996,14 +987,6 @@ impl LyricsSync {
     pub fn has_directml_libraries(&self) -> bool {
         let dir = self.downloader.runtime_dir("onnx-dml");
         [libraries::ORT, libraries::ORT_SHARED, "DirectML.dll"].iter().all(|name| dir.join(name).is_file())
-    }
-
-    /// Whether every library the card's provider needs is installed.
-    pub fn has_card_libraries(&self, card: OnnxCard) -> bool {
-        match card {
-            OnnxCard::Cuda => self.has_cuda_libraries(),
-            OnnxCard::DirectMl => self.has_directml_libraries(),
-        }
     }
 
     /// Binds `ort` to this machine's runtime - once per process, before

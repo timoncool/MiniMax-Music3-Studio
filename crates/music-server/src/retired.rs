@@ -37,6 +37,8 @@ const RETIRED: &[(&str, &str, &[&str])] = &[
             "karaoke/runtime/whisper-cudnn.tar.part",
         ],
     ),
+    // the ONNX HT-Demucs of 3.8 and earlier; stems separate on audio.cpp's server
+    ("htdemucs-onnx", "HT-Demucs (ONNX)", &["separation/models/htdemucs/htdemucs_6s_fp16.onnx"]),
 ];
 
 /// The leftovers under `data_root`, each with the paths of it that are there.
@@ -94,8 +96,15 @@ mod tests {
             fs::create_dir_all(file.parent().unwrap()).unwrap();
             fs::write(file, b"x").unwrap();
         }
+        let onnx =root.path().join("separation/models/htdemucs/htdemucs_6s_fp16.onnx");
+        fs::create_dir_all(onnx.parent().unwrap()).unwrap();
+        fs::write(&onnx, b"x").unwrap();
+        let gguf = root.path().join("separation/models/htdemucs/htdemucs-6stems-f16.gguf");
+        fs::write(&gguf, b"x").unwrap();
         let found: Vec<(&str, usize)> = leftovers(root.path()).iter().map(|leftover| (leftover.what, leftover.paths.len())).collect();
-        assert_eq!(found, vec![("parakeet-onnx", 3), ("faster-whisper", 1)]);
+        assert_eq!(found, vec![("parakeet-onnx", 3), ("faster-whisper", 1), ("htdemucs-onnx", 1)]);
+        remove_leftovers(root.path(), &["htdemucs-onnx"]);
+        assert!(!onnx.exists() && gguf.is_file(), "the ONNX model goes, the GGUF that replaced it stays");
         remove_leftovers(root.path(), &["parakeet-onnx"]);
         assert!(!root.path().join("karaoke/models/parakeet").exists());
         assert!(kept.iter().all(|file| file.is_file()), "Faster-Whisper waits for its own turn");

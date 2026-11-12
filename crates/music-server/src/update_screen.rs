@@ -41,6 +41,8 @@ const CHANGES: &[Change] = &[
     Change { what: "audiocpp-cuda13-*", reason: "audiocpp-cuda" },
     Change { what: "audiocpp-*", reason: "crisperwhisper" },
     Change { what: "transcribe-engine*", reason: "transcribe-avx2" },
+    Change { what: "htdemucs-6s", reason: "demucs-audiocpp" },
+    Change { what: "htdemucs-onnx", reason: "htdemucs-onnx-gone" },
     Change { what: "llama-*", reason: "llama" },
     Change { what: "music-train", reason: "hotstep" },
     Change { what: "ace-caption", reason: "hotstep" },

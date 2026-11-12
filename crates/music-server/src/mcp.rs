@@ -1894,7 +1894,7 @@ fn tools() -> &'static [Tool] {
             },
             Tool {
                 name: "separator_runtime_install",
-                description: "Download for the separator: an engine whole on the settings' device (htdemucs: its model and ONNX Runtime; roformer: Mel-Band RoFormer and its BSRoformer.cpp build), the chosen engine on a device (auto, cuda, cpu), or a single asset_id from separator_runtime.",
+                description: "Download for the separator: an engine whole on the settings' device (htdemucs: its model and audio.cpp's server; roformer: Mel-Band RoFormer and its BSRoformer.cpp build), the chosen engine on a device (auto, cuda, cpu), or a single asset_id from separator_runtime.",
                 schema: || id_only("asset_id", "runtime asset id"),
                 call: |args| post("/v1/separation/runtime/install".into(), args.clone()),
             },
