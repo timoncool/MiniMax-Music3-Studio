@@ -1358,6 +1358,8 @@ export const ja = {
     flashAttentionOn: 'オン',
     flashAttentionOff: 'オフ',
     flashAttentionHint: '自動：RTX 50 以降のカードでだけオフになります。そこではオンだと歌が聞き取れなくなるためです。flash attention なしでは音楽の生成に約 1.5 倍の時間がかかります。',
+    cutShort: '途中で終了',
+    cutShortMemory: '説明と歌詞が言語モデルの KV キャッシュを使いすぎたため、曲は {s} 秒と指定の長さより短くなりました。歌詞を短くするか、設定のエンジンで LM KV キャッシュを増やすか空欄にしてください。',
     diagnostics: '診断フラグ',
     splitCfgLabel: 'CFG を 2 回のフォワードに分割',
     splitCfgHint: '--no-batch-cfg。ガイダンス時の VRAM ピークは下がりますが 1 ステップは遅くなります。',

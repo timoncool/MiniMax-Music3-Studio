@@ -120,7 +120,7 @@ pub fn kv_cache_shortfall(tokens: u64, frames: u64, max_seq: Option<u32>, replay
         needed,
         tokens,
         frames,
-        seconds: (frames as f64 / FRAME_RATE).round() as u64,
+        seconds: frames_seconds(frames),
         max_seq,
         suggest: needed.div_ceil(512) * 512,
     })
@@ -129,6 +129,11 @@ pub fn kv_cache_shortfall(tokens: u64, frames: u64, max_seq: Option<u32>, replay
 /// The frames the language model writes for a song of this length.
 pub fn song_frames(duration_seconds: f64) -> u64 {
     ((duration_seconds.max(0.0) * FRAME_RATE) as u64).min(MAX_FRAMES)
+}
+
+/// The whole seconds of music in this many frames.
+pub fn frames_seconds(frames: u64) -> u64 {
+    (frames as f64 / FRAME_RATE).round() as u64
 }
 
 /// The frames a re-render replays from its codes: 8 codes a frame, the first frame only seeding the model.

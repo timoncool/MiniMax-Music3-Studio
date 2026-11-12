@@ -49,4 +49,10 @@ describe('mapNativeLibrarySong', () => {
     expect(listed(true).nativeReplayAvailable).toBe(true);
     expect(listed(false).nativeReplayAvailable).toBe(false);
   });
+
+  it('carries the seconds of a song the KV cache cut short', () => {
+    const base = { id: 'c', title: 'C', caption: '', lyrics: '', engine_id: 'e', created_at: '1' };
+    expect(mapNativeLibrarySong({ ...base, cut_short: 'memory', cut_short_seconds: 20 }).cutShortSeconds).toBe(20);
+    expect(mapNativeLibrarySong(base).cutShortSeconds).toBeUndefined();
+  });
 });

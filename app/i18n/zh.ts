@@ -1358,6 +1358,8 @@ export const zh = {
     flashAttentionOn: '开启',
     flashAttentionOff: '关闭',
     flashAttentionHint: '自动：仅在 RTX 50 及更新的显卡上关闭，因为开启后演唱会含糊不清。关闭 flash attention 后音乐生成约多花 1.5 倍时间。',
+    cutShort: '被截断',
+    cutShortMemory: '描述和歌词占用了语言模型太多 KV 缓存，歌曲只生成了 {s} 秒，短于设定时长。请缩短歌词，或在“设置 - 引擎”中调大或清空 LM KV 缓存。',
     diagnostics: '诊断标志',
     splitCfgLabel: '将 CFG 拆分为两次前向',
     splitCfgHint: '--no-batch-cfg。引导期间显存峰值更低，但每步更慢。',

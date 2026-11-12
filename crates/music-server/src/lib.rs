@@ -1339,8 +1339,22 @@ fn listed_song(song: &library::Song) -> serde_json::Result<Value> {
         fields.remove("replay_request");
         fields.remove("audio_codes");
         fields.insert("replay_available".into(), Value::Bool(kept(&song.replay_request) && kept(&song.audio_codes)));
+        if let Some(seconds) = song.replay_request.as_ref().and_then(cut_short_seconds) {
+            fields.insert("cut_short".into(), Value::from("memory"));
+            fields.insert("cut_short_seconds".into(), Value::from(seconds));
+        }
     }
     Ok(value)
+}
+
+/// How long a song the engine marked `truncated` came out: the language model's KV cache left the song less room
+/// after the caption and lyrics than its duration asked for. Songs from engines before the mark carry none.
+fn cut_short_seconds(replay: &Value) -> Option<u64> {
+    if replay.get("truncated").and_then(Value::as_bool) != Some(true) {
+        return None;
+    }
+    let frames = prompt_check::replay_frames(replay.get("audio_codes").and_then(Value::as_str)?);
+    Some(prompt_check::frames_seconds(frames))
 }
 
 fn kept(value: &Option<Value>) -> bool {
@@ -8894,7 +8908,7 @@ async fn import_completed_mm_result(state: &AppState, job: &MusicJob, job_id: &s
         let mut generation_settings = job.generation_settings.clone();
         match (generation_settings.as_object_mut(), replay.as_object()) {
             (Some(target), Some(source)) => {
-                for (key, value) in source {
+                for (key, value) in source.iter().filter(|(key, _)| key.as_str() != "truncated") {
                     target.insert(key.clone(), value.clone());
                 }
             }
@@ -9908,6 +9922,17 @@ mod tests {
         assert!(!on.to_engine().disable_flash_attention, "On is passed even where Auto would turn it off");
         let cpu = EngineOptions { backend: music_engine::mm_server::ComputeBackend::Cpu, ..EngineOptions::default() };
         assert_eq!(cpu.flash_attention_off_reason(), None, "Auto keeps it on where nothing is known to go wrong");
+    }
+
+    #[test]
+    fn a_song_the_kv_cache_cut_short_says_how_long_it_came_out() {
+        let codes = |frames: usize| vec!["7"; (frames + 1) * 8].join(",");
+        let cut = serde_json::json!({ "truncated": true, "duration": 60.0, "audio_codes": codes(500) });
+        assert_eq!(cut_short_seconds(&cut), Some(20));
+        let finished = serde_json::json!({ "duration": 60.0, "audio_codes": codes(1500) });
+        assert_eq!(cut_short_seconds(&finished), None, "a song that reached its duration carries no mark");
+        let older = serde_json::json!({ "truncated": false, "audio_codes": codes(500) });
+        assert_eq!(cut_short_seconds(&older), None);
     }
 
     #[test]
