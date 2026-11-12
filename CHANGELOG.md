@@ -12,6 +12,7 @@ Windows build.
 ### Changed
 
 - **The agent's guide names every platform the studio ships for**, as in ACE-Step Studio ([ACE-Step Studio #68](https://github.com/timoncool/ACE-Step-Studio/pull/68)): the first step of the MCP skill said the studio is a Windows program that needs an NVIDIA card; it now points an agent to the Windows, macOS (Apple silicon) and Linux (experimental) packages of the latest release, and says the engine also runs on the processor and, experimentally, on AMD and Intel cards through Vulkan.
+- **The song engine runs on ggml 0.29**: minimaxmusic.cpp is brought forward to its upstream, whose ggml carries newer memory handling and Vulkan fixes for AMD and Intel cards; on an RTX 4090 a song is made as fast as before.
 
 ### Fixed
 
