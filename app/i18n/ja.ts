@@ -18,6 +18,7 @@ export const ja = {
   journalVerb_created: '作成',
   journalVerb_updated: '変更',
   journalVerb_deleted: '削除',
+  journalVerb_restored: '復元',
   journalVerb_imported: 'インポート',
   journalVerb_cancelled: '停止',
   journalVerb_started: '開始',

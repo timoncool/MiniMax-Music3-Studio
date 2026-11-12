@@ -18,6 +18,7 @@ export const en = {
     journalVerb_created: 'Created',
     journalVerb_updated: 'Changed',
     journalVerb_deleted: 'Deleted',
+    journalVerb_restored: 'Restored',
     journalVerb_imported: 'Imported',
     journalVerb_cancelled: 'Stopped',
     journalVerb_started: 'Started',

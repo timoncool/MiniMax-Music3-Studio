@@ -18,6 +18,7 @@ export const ru = {
     journalVerb_created: 'Создано',
     journalVerb_updated: 'Изменено',
     journalVerb_deleted: 'Удалено',
+    journalVerb_restored: 'Восстановлено',
     journalVerb_imported: 'Импортировано',
     journalVerb_cancelled: 'Остановлено',
     journalVerb_started: 'Запущено',

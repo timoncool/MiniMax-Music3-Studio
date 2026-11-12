@@ -18,6 +18,7 @@ export const ko = {
     journalVerb_created: '생성됨',
     journalVerb_updated: '변경됨',
     journalVerb_deleted: '삭제됨',
+    journalVerb_restored: '복원됨',
     journalVerb_imported: '가져옴',
     journalVerb_cancelled: '중지됨',
     journalVerb_started: '시작됨',

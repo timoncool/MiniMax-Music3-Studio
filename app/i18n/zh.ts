@@ -18,6 +18,7 @@ export const zh = {
     journalVerb_created: '已创建',
     journalVerb_updated: '已更改',
     journalVerb_deleted: '已删除',
+    journalVerb_restored: '已恢复',
     journalVerb_imported: '已导入',
     journalVerb_cancelled: '已停止',
     journalVerb_started: '已开始',
