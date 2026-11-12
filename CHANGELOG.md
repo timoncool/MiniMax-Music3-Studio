@@ -3,6 +3,19 @@
 What changed, newest first. Dates are release dates; the studio is versioned by its
 Windows build.
 
+## Unreleased — 3.9.0
+
+### Added
+
+- **The interface can be scaled**, as in YuE2 Studio ([YuE2 Studio #165](https://github.com/timoncool/YuE2-Studio/issues/165)): Settings - Appearance - Interface scale draws the whole studio from 90 to 150 % and keeps it for the next start; Ctrl + plus and Ctrl + minus, or Ctrl with the mouse wheel, change it too, and Ctrl + 0 returns to 100 %. The Winamp mode gives the chosen scale back when it closes.
+
+## 2026-11-06 — 3.8.5
+
+### Fixed
+
+- **The Hugging Face mirror is used automatically when Hugging Face cannot be reached**: on a network that cannot open huggingface.co — the most common setup failure in the telemetry, networks behind the Great Firewall among them — the studio now falls back to hf-mirror.com on its own, so the models and tools download instead of the setup stalling.
+- **LoRA training runs on Turing cards again**: the shared HOT-Step trainer is brought forward to the build the other studios ship (1123 commits) and now falls back to the F32 path for the ConvRot8 step on RTX 20-series cards (compute 7.5), where training had stopped with "backend does not support".
+
 ## 2026-11-05 — 3.8.4
 
 ### Fixed

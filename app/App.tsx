@@ -130,6 +130,7 @@ import { hubView, setTelemetry, showsNow, type HubButton } from './services/stud
 import { HubBars } from './components/HubBars';
 import { ShellPrompts } from './components/ShellPrompts';
 import { HubPopup } from './components/HubPopup';
+import { applyUiScale, scaleForKey, setUiScale, storedUiScale, UI_SCALE_EVENT } from './services/uiScale';
 
 /** Where versions before 3.3 kept the likes, in the window's own storage. */
 const STORED_LIKES_KEY = 'minimax-music3-native-liked-song-ids';
@@ -501,6 +502,40 @@ function AppContent() {
       setSelectedSong(updatedSong);
     }
   };
+
+  // The interface scale kept from the last session, and Ctrl with plus, minus, nought or the wheel to change it.
+  // The Winamp mode zooms the page for its skin and leaves the shortcuts alone while it is open.
+  useEffect(() => {
+    let scale = storedUiScale();
+    applyUiScale(scale).catch((error) => console.error('[ERROR] the interface scale could not be applied:', error));
+    const winampOpen = () => document.getElementById('webamp') !== null;
+    const change = (next: number | null) => {
+      if (next === null || next === scale) return;
+      scale = next;
+      setUiScale(next).catch((error) => console.error('[ERROR] the interface scale could not be applied:', error));
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || winampOpen()) return;
+      const next = scaleForKey(event.key, scale);
+      if (next === null) return;
+      event.preventDefault();
+      change(next);
+    };
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey || winampOpen() || event.deltaY === 0) return;
+      event.preventDefault();
+      change(scaleForKey(event.deltaY < 0 ? '+' : '-', scale));
+    };
+    const onScale = (event: Event) => { scale = (event as CustomEvent<number>).detail; };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('wheel', onWheel, { passive: false });
+    window.addEventListener(UI_SCALE_EVENT, onScale);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('wheel', onWheel);
+      window.removeEventListener(UI_SCALE_EVENT, onScale);
+    };
+  }, []);
 
   // Theme Effect
   useEffect(() => {
