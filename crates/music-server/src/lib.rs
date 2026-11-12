@@ -8220,8 +8220,18 @@ fn engine_failure_reason() -> Option<SongError> {
     }
     // the device lines of the run's load may lie further back than the tail, past a long song's frames
     let run = music_engine::mm_server::startup_log_tail(JOB_LOG_LINES).join("\n").to_lowercase();
-    let run_from_its_start = run.rfind("[studio] ---- starting").map_or(run.as_str(), |start| &run[start..]);
-    if describes_exhausted_ram(&tail) || ran_on_the_processor(run_from_its_start) {
+    exhausted_memory_reason(&tail, &run)
+}
+
+/// Whose memory ran out, from the lowercased tail of the engine's log and the longer stretch that holds the
+/// current run's load: the computer's when an allocation on the host failed or that run put its models on the
+/// processor, else the card's.
+fn exhausted_memory_reason(tail: &str, run: &str) -> Option<SongError> {
+    if !describes_exhausted_memory(tail) && !describes_exhausted_ram(tail) {
+        return None;
+    }
+    let run_from_its_start = run.rfind("[studio] ---- starting").map_or(run, |start| &run[start..]);
+    if describes_exhausted_ram(tail) || ran_on_the_processor(run_from_its_start) {
         return Some(SongError::LoadRam);
     }
     Some(SongError::LoadVram)
@@ -9820,6 +9830,20 @@ mod tests {
         assert!(lost_job_reason(on_card).to_string().contains("graphics card ran out of memory"));
         let card_after_processor = format!("{on_cpu}\n[studio] ---- starting mm-server ----\n{on_card}");
         assert!(lost_job_reason(&card_after_processor).to_string().contains("graphics card"), "the last load names the device");
+    }
+
+    #[test]
+    fn memory_that_runs_out_while_loading_on_the_processor_is_the_computer_s() {
+        let failed = "ggml_backend_cpu_buffer_type_alloc_buffer: failed to allocate buffer of size 8699305984";
+        let on_cpu = format!("[studio] ---- starting mm-server ----\n[load] device backend: cpu (cpu threads: 8)\n[load] lm backend: cpu (cpu threads: 8)\n{failed}");
+        let reason = exhausted_memory_reason(failed, &on_cpu).expect("memory ran out").to_string();
+        assert!(reason.contains("ran out of memory (RAM)") && !reason.contains("graphics card"), "{reason}");
+        let cuda_failed = "ggml_backend_cuda_buffer_type_alloc_buffer: allocating 8296 mb on device 0: cudamalloc failed: out of memory";
+        let on_card = format!("{on_cpu}\n[studio] ---- starting mm-server ----\n[load] lm backend: cuda0 (cpu threads: 8)\n{cuda_failed}");
+        assert!(exhausted_memory_reason(cuda_failed, &on_card).expect("memory ran out").to_string().contains("graphics card ran out of memory"), "the run that failed loaded on the card");
+        let on_vulkan = format!("[studio] ---- starting mm-server ----\n[load] lm backend: vulkan0 (cpu threads: 8)\n{failed}");
+        assert!(exhausted_memory_reason(failed, &on_vulkan).expect("memory ran out").to_string().contains("graphics card"), "an AMD or Intel card on Vulkan is a card");
+        assert!(exhausted_memory_reason("[load] lm backend: cpu", "[load] lm backend: cpu").is_none());
     }
 
     #[test]
