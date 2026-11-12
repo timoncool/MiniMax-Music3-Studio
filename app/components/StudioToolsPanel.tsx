@@ -17,6 +17,7 @@ import { transcribeWithNativeOpenRouter } from '../services/nativeOpenRouter';
 import { apiUrl } from '../services/apiBase';
 import { SELF_READ, useKaraokeStatus } from '../services/studioQueries';
 import { karaokeReason, recogniseLyrics } from '../services/karaoke';
+import { shownSongs, toolsSongOnOpen, type ToolRun } from '../services/toolsSong';
 import { openExternal } from '../services/externalLinks';
 import { StemPlayer } from './StemPlayer';
 
@@ -102,7 +103,18 @@ export function StudioToolsPanel({ initialSongId }: { initialSongId?: string | n
       const playable = list.filter(song => song.audio_path);
       setSongs(playable);
       setSongsError(null);
-      setSongId(current => current || playable[0]?.id || '');
+      // a stems or MIDI run still at work keeps its song in view when the tab opens again
+      // a run that cannot be read leaves the choice to the first song, and says why
+      const runOf = (path: string) =>
+        fetch(path, { headers: SELF_READ })
+          .then(answer => answer.json() as Promise<{ run?: ToolRun | null }>)
+          .then(answer => answer.run ?? null)
+          .catch((error: unknown) => {
+            console.error(`[ERROR] the run at ${path} was not read:`, error);
+            return null;
+          });
+      const runs = await Promise.all([runOf('/v1/separation/status'), runOf('/v1/midi')]);
+      setSongId(current => current || toolsSongOnOpen(playable.map(song => song.id), runs));
     } catch (failure) {
       setSongsError(failure instanceof Error ? failure.message : String(failure));
     } finally {
@@ -208,7 +220,7 @@ export function StudioToolsPanel({ initialSongId }: { initialSongId?: string | n
   // narrows it, and only the first handful of matches are drawn.
   const needle = query.trim().toLowerCase();
   const matches = needle ? songs.filter(song => song.title.toLowerCase().includes(needle)) : songs;
-  const visible = matches.slice(0, 12);
+  const visible = shownSongs(matches, songId, 12);
   const hidden = matches.length - visible.length;
   const settings = status?.settings ?? { stems: status?.stems ?? [], runtime: 'auto' as const };
   // what separating again replaces: the stems it makes that the song has already
