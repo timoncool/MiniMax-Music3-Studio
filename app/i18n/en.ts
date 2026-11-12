@@ -1789,6 +1789,7 @@ export const en = {
     karaokeNoRecogniser: 'No recogniser is chosen. Pick one in Settings, under Models.',
     karaokeInstrumental: 'This track has no words - there is nothing to time.',
     karaokeNoMatch: 'The recogniser heard no words from these lyrics in the audio. Check that the lyrics belong to this track, or try another recogniser in Settings.',
+    karaokeNoWords: "No sung words could be heard in this track, so there is nothing to time. The vocal may be too buried or unclear, or the track may be instrumental.",
     karaokeDownloading: 'Downloading the recogniser it needs, then timing the lyrics.',
     karaokeModelMissing: 'The chosen recogniser could not be downloaded. Check the connection, or pick another one in Settings.',
     karaokeNoLines: 'No timed line was found in the file. The studio reads .srt, .ass, .ssa and .lrc.',

@@ -1784,6 +1784,7 @@ export const zh = {
     karaokeNoRecogniser: '尚未选择识别模型。请在设置的「模型」中选择。',
     karaokeInstrumental: '这首曲目没有歌词，无法生成时间轴。',
     karaokeNoMatch: '识别模型没有在音频中听到这段歌词。请确认歌词与曲目一致，或在设置中换一个识别模型。',
+    karaokeNoWords: "这首曲目中听不出唱出的歌词，因此无法生成时间轴。人声可能过于模糊或被伴奏掩盖，也可能是纯音乐。",
     karaokeDownloading: '正在下载所需的识别模型，随后生成歌词时间轴。',
     karaokeModelMissing: '所选识别模型下载失败。请检查网络，或在设置中另选一个。',
     karaokeNoLines: '文件中没有带时间的行。工作室可读取 .srt、.ass、.ssa 和 .lrc。',

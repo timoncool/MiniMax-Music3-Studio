@@ -35,6 +35,7 @@ const REASONS: Record<string, string> = {
     'karaoke.no-recogniser': 'karaokeNoRecogniser',
     'karaoke.instrumental': 'karaokeInstrumental',
     'karaoke.no-match': 'karaokeNoMatch',
+    'karaoke.no-words': 'karaokeNoWords',
     'karaoke.downloading': 'karaokeDownloading',
     'karaoke.model-missing': 'karaokeModelMissing',
     'karaoke.no-lines': 'karaokeNoLines',

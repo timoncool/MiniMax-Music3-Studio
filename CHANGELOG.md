@@ -31,6 +31,7 @@ Windows build.
 
 ### Fixed
 
+- **Karaoke that hears no sung words says so in the window's language**, as in ACE-Step Studio: the song panel's karaoke, Tools and dataset preparation showed the service's English "the recogniser found no words to time"; now it is a sentence in the window's language that names the likely causes - a buried or unclear vocal, or an instrumental.
 - **The karaoke of a video moves up to 30 seconds either way, in hundredths**, as in ACE-Step Studio ([YuE2 Studio #231](https://github.com/timoncool/YuE2-Studio/issues/231)): the lyrics offset in the video window reached only 3 seconds in tenths; it now takes from -30.00 to +30.00 seconds, on the slider and typed in its field.
 - **A computer without a graphics card to compute on is told what that means**, as asked in YuE2 Studio ([YuE2 Studio #224](https://github.com/timoncool/YuE2-Studio/issues/224)): where songs would be made on the processor - no card, or built-in graphics below the smallest local set - the first screen's recommendation and Settings - Local engine say that this is many times slower, tens of minutes and hours, and that a discrete card or OpenRouter is faster.
 - **Karaoke's engine updated while it is in use says when it takes over**: a recogniser loaded in the running studio stays in it until the studio closes, so the update screen now says that karaoke's engine updates after a restart of the studio and the earlier one stays in use until then, instead of reporting the update as in place.

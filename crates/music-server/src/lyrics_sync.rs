@@ -83,9 +83,9 @@ const SERVER_CUBLAS_BUILD: &str = "13.8.0.4";
 /// so this is pinned exactly as Dub Studio pins it.
 const ONNXRUNTIME_BUILD: &str = "v1.31.1";
 
-/// What a recogniser that heard nothing sung says; the dataset preparation
-/// takes it to mean the song is an instrumental.
-pub const NO_WORDS: &str = "the recogniser found no words to time";
+/// What a recogniser that heard nothing sung says: a code, not a sentence, so the window puts it in the reader's
+/// language. The dataset preparation takes it to mean the song is an instrumental.
+pub const NO_WORDS: &str = "karaoke.no-words";
 
 /// A cloud recogniser answered with no timed segments: the model returns no timings, or heard nothing. Not
 /// `NO_WORDS`, which marks a song instrumental in dataset preparation.
