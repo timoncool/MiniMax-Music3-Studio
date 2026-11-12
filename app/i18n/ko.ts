@@ -189,6 +189,7 @@ export const ko = {
     cancelGeneration: '생성 취소',
     cancelAll: '모두 취소',
     resetGeneration: 'GPU 리셋',
+    dismissStopped: '지우기',
     schedulerType: '스케줄러',
     dcwEnabledLabel: 'DCW 품질 보정',
     dcwHint: 'CVPR 2026, 무료',

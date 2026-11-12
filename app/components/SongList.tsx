@@ -1192,7 +1192,7 @@ export const SongItem: React.FC<SongItemProps> = ({
                             onClick={(e) => { e.stopPropagation(); onResetJob(); }}
                             className="text-[10px] text-red-400 hover:text-red-300 transition-colors font-sans animate-pulse font-bold"
                         >
-                            {t('resetGeneration')}
+                            {t('dismissStopped')}
                         </button>
                     </div>
                 ) : (

@@ -56,3 +56,24 @@ describe('the play control of a song row (YuE2 Studio #171)', () => {
     expect(playing?.getAttribute('aria-pressed')).toBe('true');
   });
 });
+
+describe('a stopped card', () => {
+  it('offers to dismiss it, named by what it does, not as a reset of the card', () => {
+    const onResetJob = vi.fn();
+    const noop = () => undefined;
+    const stopped = { ...song, stage: 'cancelled', isGenerating: false } as unknown as Song;
+    act(() => root.render(
+      <QueryClientProvider client={queries}>
+        <SongItem song={stopped} isCurrent={false} isSelected={false} isSelectionMode={false} isChecked={false} isLiked={false}
+          isPlaying={false} isOwner={false} onPlay={noop} onSelect={noop} onToggleSelect={noop} onToggleLike={noop} onAddToPlaylist={noop}
+          onResetJob={onResetJob} />
+      </QueryClientProvider>,
+    ));
+    const buttons = [...host.querySelectorAll('button')];
+    expect(buttons.some(button => button.textContent === 'resetGeneration')).toBe(false);
+    const dismiss = buttons.find(button => button.textContent === 'dismissStopped');
+    expect(dismiss).toBeDefined();
+    act(() => { dismiss!.click(); });
+    expect(onResetJob).toHaveBeenCalledTimes(1);
+  });
+});

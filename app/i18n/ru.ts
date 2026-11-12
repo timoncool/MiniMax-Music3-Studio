@@ -191,6 +191,7 @@ export const ru = {
     cancelGeneration: 'Отменить генерацию',
     cancelAll: 'Отменить всё',
     resetGeneration: 'Сбросить GPU',
+    dismissStopped: 'Убрать',
     schedulerType: 'Шедулер',
     dcwEnabledLabel: 'DCW коррекция качества',
     dcwHint: 'CVPR 2026, бесплатно',

@@ -189,6 +189,7 @@ export const zh = {
     cancelGeneration: '取消生成',
     cancelAll: '取消全部',
     resetGeneration: '重置 GPU',
+    dismissStopped: '移除',
     schedulerType: '调度器',
     dcwEnabledLabel: 'DCW 质量校正',
     dcwHint: 'CVPR 2026, 免费',

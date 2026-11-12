@@ -189,6 +189,7 @@ export const ja = {
   cancelGeneration: '生成をキャンセル',
   cancelAll: 'すべてキャンセル',
   resetGeneration: 'GPU リセット',
+  dismissStopped: '消す',
   schedulerType: 'スケジューラ',
   dcwEnabledLabel: 'DCW 品質補正',
   dcwHint: 'CVPR 2026, 無料',
