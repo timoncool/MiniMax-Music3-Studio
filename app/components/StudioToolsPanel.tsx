@@ -17,7 +17,7 @@ import { transcribeWithNativeOpenRouter } from '../services/nativeOpenRouter';
 import { apiUrl } from '../services/apiBase';
 import { SELF_READ, useKaraokeStatus } from '../services/studioQueries';
 import { karaokeReason, recogniseLyrics } from '../services/karaoke';
-import { shownSongs, toolsSongOnOpen, type ToolRun } from '../services/toolsSong';
+import { libraryFailure, shownSongs, toolsSongOnOpen, type ToolRun } from '../services/toolsSong';
 import { openExternal } from '../services/externalLinks';
 import { StemPlayer } from './StemPlayer';
 
@@ -97,7 +97,7 @@ export function StudioToolsPanel({ initialSongId }: { initialSongId?: string | n
   const loadSongs = useCallback(async () => {
     try {
       const response = await fetch('/v1/library/songs');
-      if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+      if (!response.ok) throw new Error(libraryFailure(response.status, await response.text()));
       const body = await response.json();
       const list: NativeLibrarySong[] = Array.isArray(body) ? body : body.songs ?? [];
       const playable = list.filter(song => song.audio_path);
