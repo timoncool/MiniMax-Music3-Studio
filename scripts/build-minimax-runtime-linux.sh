@@ -1,7 +1,8 @@
 #!/bin/bash
 # Linux counterpart of build-minimax-runtime.ps1: builds the pinned
-# minimaxmusic.cpp `mm-server` with the Vulkan backend and a build of ggml-cpu
-# for every processor generation, each loaded as a library, and copies it with
+# minimaxmusic.cpp `mm-server` with the Vulkan backend, the CUDA 13 and CUDA 12
+# backends where their toolkits are, and a build of ggml-cpu for every processor
+# generation, each loaded as a library, and copies it with
 # its libraries into OUTPUT_DIRECTORY. The libraries are found beside the
 # binary ($ORIGIN), wherever the package puts them.
 set -euo pipefail
@@ -36,11 +37,42 @@ server="$(find "$worktree/build-linux" -maxdepth 2 -type f -name mm-server | hea
 cp "$server" "$output/"
 # -a keeps the version symlinks; the binary finds them through $ORIGIN.
 find "$worktree/build-linux" -maxdepth 2 -name 'lib*.so*' -exec cp -a {} "$output/" \;
-printf '{"commit":"%s","backend":"vulkan","platform":"linux"}\n' "$commit" > "$output/runtime.json"
-for binary in "$output/mm-server" "$output"/lib*.so*; do
+# The CUDA backends, each when this machine has its toolkit (CUDA13_ROOT, CUDA12_ROOT): ggml-cuda alone, loaded by the
+# engine from cuda13/ or cuda12/ when the studio names it (MM3_CUDA_BACKEND), device code for every architecture of
+# that CUDA, no PTX. Their CUDA runtime and cuBLAS are not shipped: the studio downloads NVIDIA's wheels into one folder
+# the engine and the audio.cpp server share, and names it in LD_LIBRARY_PATH.
+build_cuda() {
+    local name="$1" root="$2" architectures="$3"
+    rm -rf "$worktree/build-linux-$name"
+    cmake -S "$worktree" -B "$worktree/build-linux-$name" -G Ninja -DCMAKE_BUILD_TYPE=Release \
+        -DGGML_NATIVE=OFF -DGGML_BACKEND_DL=ON -DGGML_CUDA=ON -DGGML_CUDA_NCCL=OFF -DGGML_CUDA_FA_ALL_QUANTS=ON \
+        "-DCMAKE_CUDA_ARCHITECTURES=$architectures" "-DCMAKE_CUDA_COMPILER=$root/bin/nvcc" "-DCUDAToolkit_ROOT=$root" \
+        -DCMAKE_CUDA_FLAGS=-Wno-deprecated-gpu-targets \
+        -DCMAKE_BUILD_RPATH='$ORIGIN:$ORIGIN/..' -DCMAKE_INSTALL_RPATH='$ORIGIN:$ORIGIN/..' -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON
+    cmake --build "$worktree/build-linux-$name" --config Release --target ggml-cuda -j "$(getconf _NPROCESSORS_ONLN)"
+    local cuda
+    cuda="$(find "$worktree/build-linux-$name" -name 'libggml-cuda.so' -type f | head -n 1)"
+    [ -n "$cuda" ] || { echo "[ERROR] the $name build completed without libggml-cuda.so" >&2; exit 1; }
+    mkdir -p "$output/$name"
+    cp "$cuda" "$output/$name/"
+    # CMake appends the toolkit's library folder of this machine to the RUNPATH
+    patchelf --set-rpath '$ORIGIN:$ORIGIN/..' "$output/$name/libggml-cuda.so"
+}
+backend="vulkan"
+if [ -x "${CUDA12_ROOT:-}/bin/nvcc" ]; then
+    build_cuda cuda12 "$CUDA12_ROOT" "52-real;60-real;61-real;70-real;75-real;80-real;86-real;89-real;90-real;120a-real"
+    backend="cuda12,$backend"
+fi
+if [ -x "${CUDA13_ROOT:-}/bin/nvcc" ]; then
+    build_cuda cuda13 "$CUDA13_ROOT" "75-real;80-real;86-real;89-real;90-real;120a-real"
+    backend="cuda13,$backend"
+fi
+printf '{"commit":"%s","backend":"%s","platform":"linux"}\n' "$commit" "$backend" > "$output/runtime.json"
+for binary in "$output/mm-server" "$output"/*.so* "$output"/cuda13/*.so* "$output"/cuda12/*.so*; do
+    [ -f "$binary" ] || continue
     [ -L "$binary" ] && continue
-    if readelf -d "$binary" | sed -n 's/.*R\(UN\)\{0,1\}PATH.*\[\(.*\)\]/\2/p' | tr ':' '\n' | grep -v '^\$ORIGIN' | grep -q .; then
-        echo "[ERROR] $binary keeps a build-machine library path:" >&2
+    if readelf -d "$binary" | grep -iE 'runpath|rpath' | grep -qE '(\[|:)/'; then
+        echo "[ERROR] $binary keeps an absolute RUNPATH:" >&2
         readelf -d "$binary" | grep -iE 'runpath|rpath' >&2
         exit 1
     fi
