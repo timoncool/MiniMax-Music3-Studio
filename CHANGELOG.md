@@ -33,6 +33,7 @@ Windows build.
 - **Studio Hub notices follow what you do at once**, as in YuE2 Studio: a notice closed or clicked, and a song that ends, bring the next notice without waiting for the minute's refresh; a link in a notice is counted by its address, and the hub's requests wait while a song is made.
 - **On Linux the song engine computes on NVIDIA cards through CUDA**, as on Windows and as in ACE-Step Studio: the Linux engine ran on Vulkan alone; it now carries its CUDA 13 and CUDA 12 builds, chosen by the card and the driver - CUDA 12 for a card from the GTX 900 to the Titan V series or a driver from 525 to 579. Neither carries its CUDA runtime and cuBLAS in the package: the first CUDA start downloads them from NVIDIA's packages (CUDA 13: about 440 MB, CUDA 12: about 585 MB), with the start screen's percent, into one folder the audio.cpp server of stems, karaoke and audio to MIDI shares: the server keeps only its cuFFT beside it and no longer downloads its own copy of them.
 - **The song engine runs on ggml 0.29**: minimaxmusic.cpp is brought forward to its upstream, whose ggml carries newer memory handling and Vulkan fixes for AMD and Intel cards; on an RTX 4090 a song is made as fast as before.
+- **A song on the processor is made faster**: the engine computes the matrices of F32, F16, BF16, Q8_0 and Q4_0 weights with llamafile's tinyBLAS kernel, which makes a DiT step about 1.2 times faster with the Q8_0 and F16 sets. The same seed on the processor gives a different song than in 3.8.5; on a graphics card nothing changes.
 
 ### Fixed
 
