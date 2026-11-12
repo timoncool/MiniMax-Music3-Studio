@@ -5297,13 +5297,15 @@ async fn execute_openrouter_json(
         .to_string();
     request_log::asked(what, &model, authenticated.request.body.to_string().chars().count());
     let started = std::time::Instant::now();
-    let response = net::client()
-        .post(format!("{}{}", providers::openrouter::API_BASE_URL, authenticated.request.path))
-        .bearer_auth(authenticated.api_key)
-        .json(&authenticated.request.body)
-        .send()
-        .await
-        .inspect_err(|error| request_log::failed(what, &model, &error.to_string()))?;
+    let client = net::client();
+    let response = net::send_cloud(|| {
+        client
+            .post(format!("{}{}", providers::openrouter::API_BASE_URL, authenticated.request.path))
+            .bearer_auth(&authenticated.api_key)
+            .json(&authenticated.request.body)
+    })
+    .await
+    .inspect_err(|error| request_log::failed(what, &model, &format!("{error:#}")))?;
     let status = response.status();
     let response = match response.error_for_status_ref() {
         Ok(_) => response,
@@ -5513,8 +5515,13 @@ pub fn studio_data_root() -> Option<PathBuf> {
 /// assistant, the captioner, and ONNX Runtime inside the service - at the card
 /// chosen in the engine settings, numbered as nvidia-smi numbers them. Called
 /// by the desktop shell and the standalone service before anything starts.
+/// A chosen card that is not in the computer is not pointed at: CUDA would see no card at all, and the engine start
+/// says why (`missing_chosen_card`).
 pub fn apply_saved_gpu() {
     let Some(index) = load_studio_settings(&studio_settings_path()).and_then(|settings| settings.engine_options.gpu) else { return };
+    if missing_chosen_card(Some(index), &cuda_build::nvidia_cards()).is_some() {
+        return;
+    }
     // SAFETY: called first thing in the process, before the service and its
     // runtimes read the environment; on Windows the variables are set through
     // SetEnvironmentVariableW, which is thread safe.
@@ -5533,6 +5540,8 @@ async fn system_gpus(State(state): State<AppState>) -> Json<Value> {
         "cards": cards.iter().map(|(index, name, gigabytes)| serde_json::json!({ "index": index, "name": name, "memory_gb": gigabytes })).collect::<Vec<_>>(),
         "chosen": chosen,
         "running": running,
+        // the chosen card is not in the computer: why the engine does not start until another is chosen
+        "chosen_missing": missing_chosen_card(chosen, &cards),
     }))
 }
 
@@ -6748,16 +6757,19 @@ async fn assistant_write_stream(
         let started = std::time::Instant::now();
 
         let client = net::client();
-        let mut outgoing = client
-            .post(format!("{}/chat/completions", base.trim_end_matches('/')))
-            .json(&body)
-            .timeout(std::time::Duration::from_secs(600));
-        if let Some(key) = key {
-            outgoing = outgoing
-                .header(reqwest::header::AUTHORIZATION, format!("Bearer {key}"))
-                .header("HTTP-Referer", "https://github.com/timoncool/MiniMax-Music3-Studio")
-                .header("X-Title", "MiniMax Music3 Studio");
-        }
+        let outgoing = || {
+            let mut outgoing = client
+                .post(format!("{}/chat/completions", base.trim_end_matches('/')))
+                .json(&body)
+                .timeout(std::time::Duration::from_secs(600));
+            if let Some(key) = &key {
+                outgoing = outgoing
+                    .header(reqwest::header::AUTHORIZATION, format!("Bearer {key}"))
+                    .header("HTTP-Referer", "https://github.com/timoncool/MiniMax-Music3-Studio")
+                    .header("X-Title", "MiniMax Music3 Studio");
+            }
+            outgoing
+        };
 
         // Until the first byte the window can be closed as well: a model
         // still loading or reading a long prompt sends nothing for minutes.
@@ -6767,7 +6779,7 @@ async fn assistant_write_stream(
                 release_assistant_unless_kept(&state).await;
                 return;
             }
-            sent = outgoing.send() => sent,
+            sent = net::send_cloud(outgoing) => sent,
         };
         let response = match sent {
             Ok(response) => response,
@@ -8657,12 +8669,15 @@ fn openrouter_music_prompt(request: &CreateMusicJobRequest) -> String {
 
 async fn run_openrouter_music_generation(state: AppState, job_id: String, stream_request: providers::openrouter::OpenRouterMusicStreamRequest) {
     let outcome = async {
-        let response = net::client()
-            .post(format!("{}{}", providers::openrouter::API_BASE_URL, stream_request.request.path))
-            .bearer_auth(stream_request.api_key)
-            .json(&stream_request.request.body)
-            .send().await?
-            .error_for_status()?;
+        let client = net::client();
+        let response = net::send_cloud(|| {
+            client
+                .post(format!("{}{}", providers::openrouter::API_BASE_URL, stream_request.request.path))
+                .bearer_auth(&stream_request.api_key)
+                .json(&stream_request.request.body)
+        })
+        .await?
+        .error_for_status()?;
         let mut stream = response.bytes_stream();
         let mut sse = Vec::new();
         while let Some(chunk) = stream.next().await { sse.extend_from_slice(&chunk?); }
