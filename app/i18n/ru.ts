@@ -1935,6 +1935,8 @@ export const ru = {
     updateWhyDemucsAudiocpp: "Стемы делит HT-Demucs в сервере audio.cpp",
     updateWhyHtdemucsOnnxGone: "Больше не нужно — HT-Demucs теперь работает в движке audio.cpp",
     updateWhyMidiAudiocpp: "Звук в MIDI переводит MuScriptor в сервере audio.cpp",
+    updateWhyEngineCudaLinux: "Библиотеки CUDA и cuBLAS, общие для движка песен и сервера audio.cpp на Linux, в одной папке",
+    updateWhyAcppCudaLinuxGone: "Сервер audio.cpp берёт CUDA и cuBLAS из папки движка песен; его собственные копии больше не читаются",
     updateWhyNewer: "В этом релизе другая сборка",
     updateWhyUnused: "Больше не используется",
 };

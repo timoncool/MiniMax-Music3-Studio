@@ -78,7 +78,50 @@ const RETIRED: &[(&str, &str, &[&str])] = &[
             "karaoke/runtime/directml.nupkg.json",
         ],
     ),
+    // Linux: the CUDA runtime and cuBLAS 3.8 downloaded beside audio.cpp's CUDA 13 server; the server takes them from
+    // the engine's folder (`engine_runtime::LINUX_CUDA13`)
+    #[cfg(target_os = "linux")]
+    (
+        "acpp-cuda13-linux",
+        "CUDA runtime and cuBLAS 13 beside the audio.cpp server",
+        &[
+            "karaoke/runtime/audiocpp/libcudart.so.13",
+            "karaoke/runtime/audiocpp/libcublas.so.13",
+            "karaoke/runtime/audiocpp/libcublasLt.so.13",
+            "karaoke/runtime/audiocpp/audiocpp-cuda13-cudart.part-archive",
+            "karaoke/runtime/audiocpp/audiocpp-cuda13-cublas.part-archive",
+            "karaoke/runtime/audiocpp-cuda13-cudart.whl",
+            "karaoke/runtime/audiocpp-cuda13-cudart.whl.json",
+            "karaoke/runtime/audiocpp-cuda13-cudart.part",
+            "karaoke/runtime/audiocpp-cuda13-cublas.whl",
+            "karaoke/runtime/audiocpp-cuda13-cublas.whl.json",
+            "karaoke/runtime/audiocpp-cuda13-cublas.part",
+        ],
+    ),
+    // Linux: the same of audio.cpp's CUDA 12 server (`engine_runtime::LINUX_CUDA12`)
+    #[cfg(target_os = "linux")]
+    (
+        "acpp-cuda12-linux",
+        "CUDA runtime and cuBLAS 12 beside the audio.cpp server",
+        &[
+            "karaoke/runtime/audiocpp-cuda12/libcudart.so.12",
+            "karaoke/runtime/audiocpp-cuda12/libcublas.so.12",
+            "karaoke/runtime/audiocpp-cuda12/libcublasLt.so.12",
+            "karaoke/runtime/audiocpp-cuda12/audiocpp-cuda12-cudart.part-archive",
+            "karaoke/runtime/audiocpp-cuda12/audiocpp-cuda12-cublas.part-archive",
+            "karaoke/runtime/audiocpp-cuda12-cudart.whl",
+            "karaoke/runtime/audiocpp-cuda12-cudart.whl.json",
+            "karaoke/runtime/audiocpp-cuda12-cudart.part",
+            "karaoke/runtime/audiocpp-cuda12-cublas.whl",
+            "karaoke/runtime/audiocpp-cuda12-cublas.whl.json",
+            "karaoke/runtime/audiocpp-cuda12-cublas.part",
+        ],
+    ),
 ];
+
+/// Linux: the leftover of audio.cpp's own CUDA runtime and cuBLAS and the engine's CUDA build that replaces it.
+pub const ACPP_CUDA_LINUX: [(&str, crate::cuda_build::CudaBuild); 2] =
+    [("acpp-cuda13-linux", crate::cuda_build::CudaBuild::Cuda13), ("acpp-cuda12-linux", crate::cuda_build::CudaBuild::Cuda12)];
 
 /// The leftovers under `data_root`, each with the paths of it that are there.
 pub fn leftovers(data_root: &Path) -> Vec<Leftover> {
@@ -160,7 +203,8 @@ mod tests {
             }
         }
         let found: Vec<(&str, usize)> = leftovers(root.path()).iter().map(|leftover| (leftover.what, leftover.paths.len())).collect();
-        assert_eq!(found, vec![("parakeet-onnx", 3), ("faster-whisper", 1), ("htdemucs-onnx", 1), ("midi-hotstep", 1), ("ort-gpu", 28)]);
+        assert_eq!(found[..5], [("parakeet-onnx", 3), ("faster-whisper", 1), ("htdemucs-onnx", 1), ("midi-hotstep", 1), ("ort-gpu", 28)]);
+        assert!(found[5..].iter().all(|(_, paths)| *paths == 0));
         remove_leftovers(root.path(), &["ort-gpu"]);
         assert!(onnx_cpu.iter().all(|file| file.is_file()), "the processor's ONNX Runtime stays");
         remove_leftovers(root.path(), &["midi-hotstep"]);
@@ -173,6 +217,25 @@ mod tests {
         remove_leftovers(root.path(), &["parakeet-onnx", "faster-whisper"]);
         assert!(!root.path().join("karaoke/models/whisper").exists());
         assert!(kept[..2].iter().all(|file| file.is_file()));
+        assert!(leftovers(root.path()).iter().all(|leftover| leftover.paths.is_empty()));
+    }
+
+    /// Linux: the CUDA runtime and cuBLAS 3.8 laid beside audio.cpp's CUDA servers are leftovers, each named by the
+    /// engine build that replaces it, and go without the cuFFT and the program that stay beside the server.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_servers_own_cuda_libraries_are_leftovers_beside_their_cufft() {
+        let root = tempfile::tempdir().unwrap();
+        let kept = [root.path().join("karaoke/runtime/audiocpp/libcufft.so.12"), root.path().join("karaoke/runtime/audiocpp/audiocpp_server")];
+        for file in kept.iter().chain([root.path().join("karaoke/runtime/audiocpp/libcudart.so.13"), root.path().join("karaoke/runtime/audiocpp-cuda13-cublas.whl.json")].iter()) {
+            fs::create_dir_all(file.parent().unwrap()).unwrap();
+            fs::write(file, b"x").unwrap();
+        }
+        let found: Vec<(&str, usize)> = leftovers(root.path()).iter().filter(|leftover| !leftover.paths.is_empty()).map(|leftover| (leftover.what, leftover.paths.len())).collect();
+        assert_eq!(found, vec![("acpp-cuda13-linux", 2)]);
+        assert!(ACPP_CUDA_LINUX.iter().all(|(what, _)| RETIRED.iter().any(|(known, _, _)| known == what)));
+        remove_leftovers(root.path(), &["acpp-cuda13-linux"]);
+        assert!(kept.iter().all(|file| file.is_file()), "the server and its cuFFT stay");
         assert!(leftovers(root.path()).iter().all(|leftover| leftover.paths.is_empty()));
     }
 }

@@ -1932,6 +1932,8 @@ export const ja = {
   updateWhyDemucsAudiocpp: "ステムは audio.cpp サーバーの HT-Demucs で分離されます",
   updateWhyHtdemucsOnnxGone: "不要になりました — HT-Demucs は audio.cpp エンジンで動作します",
   updateWhyMidiAudiocpp: "オーディオから MIDI への変換は audio.cpp サーバーの MuScriptor で行います",
+  updateWhyEngineCudaLinux: "Linux で曲のエンジンと audio.cpp サーバーが共有する CUDA ランタイムと cuBLAS（1 つのフォルダー）",
+  updateWhyAcppCudaLinuxGone: "audio.cpp サーバーは曲のエンジンのフォルダーにある CUDA ランタイムと cuBLAS を使い、自分のコピーは読み込みません",
   updateWhyNewer: "このリリースでは別のビルドを使います",
   updateWhyUnused: "もう使われていません",
 };

@@ -27,6 +27,8 @@ const WHY: Record<string, TranslationKey> = {
   'audiocpp-server': 'updateWhyAudiocppServer',
   'htdemucs-onnx-gone': 'updateWhyHtdemucsOnnxGone',
   'midi-audiocpp': 'updateWhyMidiAudiocpp',
+  'engine-cuda-linux': 'updateWhyEngineCudaLinux',
+  'acpp-cuda-linux-gone': 'updateWhyAcppCudaLinuxGone',
   'newer': 'updateWhyNewer',
   'unused': 'updateWhyUnused',
 };

@@ -1932,6 +1932,8 @@ export const ko = {
     updateWhyDemucsAudiocpp: "스템은 audio.cpp 서버의 HT-Demucs가 나눕니다",
     updateWhyHtdemucsOnnxGone: "더 이상 필요 없음 — 이제 HT-Demucs가 audio.cpp 엔진에서 실행됩니다",
     updateWhyMidiAudiocpp: "오디오→MIDI는 audio.cpp 서버의 MuScriptor가 맡습니다",
+    updateWhyEngineCudaLinux: "Linux에서 곡 엔진과 audio.cpp 서버가 함께 쓰는 CUDA 런타임과 cuBLAS(한 폴더)",
+    updateWhyAcppCudaLinuxGone: "audio.cpp 서버는 곡 엔진 폴더의 CUDA 런타임과 cuBLAS를 쓰며, 자체 사본은 더 이상 읽지 않습니다",
     updateWhyNewer: "이번 릴리스는 다른 빌드를 씁니다",
     updateWhyUnused: "더 이상 쓰지 않습니다",
 };

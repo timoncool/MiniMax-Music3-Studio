@@ -1936,6 +1936,8 @@ export const en = {
     updateWhyDemucsAudiocpp: "Stems are split by HT-Demucs in the audio.cpp server",
     updateWhyHtdemucsOnnxGone: "No longer needed — HT-Demucs now runs in the audio.cpp engine",
     updateWhyMidiAudiocpp: "Audio to MIDI runs MuScriptor in the audio.cpp server",
+    updateWhyEngineCudaLinux: "The CUDA runtime and cuBLAS the song engine and the audio.cpp server share on Linux, in one folder",
+    updateWhyAcppCudaLinuxGone: "The audio.cpp server takes its CUDA runtime and cuBLAS from the song engine's folder; its own copies are not read",
     updateWhyNewer: "This release uses another build of it",
     updateWhyUnused: "No longer used",
 };

@@ -8500,6 +8500,16 @@ fn update_plan_now(state: &AppState, karaoke: &lyrics_sync::LyricsSyncConfig, se
             }
         }
     }
+    // Linux: audio.cpp's own CUDA runtime and cuBLAS of former releases; the engine's folder takes their place
+    for (what, build) in retired::ACPP_CUDA_LINUX {
+        if leftovers.iter().any(|leftover| leftover.what == what && !leftover.paths.is_empty()) {
+            for asset in state.engine_runtime.missing(build) {
+                if !updated.iter().chain(added.iter()).any(|row: &Candidate| row.id == asset.id) {
+                    added.push(of(Part::Engine, asset, state.engine_runtime.downloader(), None));
+                }
+            }
+        }
+    }
     // karaoke's server, downloaded here for the stems and Audio to MIDI in use
     for (build, _) in update_acpp_builds(state, &leftovers, separation, options) {
         let downloader = state.lyrics_sync.downloader();
@@ -8626,8 +8636,11 @@ async fn run_update(state: &AppState, rows: &[update_screen::Row]) -> anyhow::Re
     let demucs_ready = htdemucs_installed(state, separation);
     let midi_ready = !midi::SIZES.iter().any(|size| state.midi.model_installed(size)) || midi_build(&options).is_ok_and(|build| state.lyrics_sync.acpp().installed(build));
     let tempo_ready = !state.training.listen_ready() || state.lyrics_sync.onnxruntime_library().is_some();
+    let engine_cuda_ready: Vec<&'static str> =
+        retired::ACPP_CUDA_LINUX.iter().filter(|(_, build)| state.engine_runtime.missing(*build).is_empty()).map(|(what, _)| *what).collect();
     tokio::task::spawn_blocking(move || {
         let mut gone = vec!["parakeet-onnx"];
+        gone.extend(engine_cuda_ready);
         if !karaoke_on_whisper(&karaoke) || sync.crisper_ready(karaoke.runtime) {
             gone.push("faster-whisper");
         }

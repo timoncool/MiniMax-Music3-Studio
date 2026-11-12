@@ -48,6 +48,12 @@ const CHANGES: &[Change] = &[
     Change { what: "music-train", reason: "hotstep" },
     Change { what: "ace-caption", reason: "hotstep" },
     Change { what: "engine-cuda12-cublas", reason: "cublas-wheel" },
+    Change { what: "engine-cuda-cudart-linux", reason: "engine-cuda-linux" },
+    Change { what: "engine-cuda-cublas-linux", reason: "engine-cuda-linux" },
+    Change { what: "engine-cuda12-cudart-linux", reason: "engine-cuda-linux" },
+    Change { what: "engine-cuda12-cublas-linux", reason: "engine-cuda-linux" },
+    Change { what: "acpp-cuda13-linux", reason: "acpp-cuda-linux-gone" },
+    Change { what: "acpp-cuda12-linux", reason: "acpp-cuda-linux-gone" },
     Change { what: "faster-whisper", reason: "faster-whisper-gone" },
     Change { what: "parakeet-onnx", reason: "parakeet-onnx-gone" },
     Change { what: "ort-gpu", reason: "ort-gpu-gone" },
@@ -70,6 +76,8 @@ pub const REASONS: &[(&str, &str)] = &[
     ("audiocpp-server", "The audio.cpp engine behind stem separation, karaoke and audio-to-MIDI"),
     ("htdemucs-onnx-gone", "No longer needed — HT-Demucs now runs in the audio.cpp engine"),
     ("midi-audiocpp", "Audio to MIDI runs MuScriptor in the audio.cpp server"),
+    ("engine-cuda-linux", "The CUDA runtime and cuBLAS the song engine and the audio.cpp server share on Linux, in one folder"),
+    ("acpp-cuda-linux-gone", "The audio.cpp server takes its CUDA runtime and cuBLAS from the song engine's folder; its own copies are not read"),
     ("newer", "This release uses another build of it"),
     ("unused", "No longer used"),
 ];
@@ -329,6 +337,18 @@ mod tests {
         }
         for code in ["audiocpp-cuda", "audiocpp-server"] {
             assert!(REASONS.iter().any(|(reason, _)| *reason == code), "{code} has its text");
+        }
+    }
+
+    /// Linux: the engine's CUDA runtime and cuBLAS that audio.cpp's server shares come with their reason, and the
+    /// server's own former copies with the reason they go.
+    #[test]
+    fn the_shared_linux_cuda_libraries_and_the_servers_copies_read_apart() {
+        for asset in crate::engine_runtime::LINUX_CUDA13.iter().chain(crate::engine_runtime::LINUX_CUDA12.iter()) {
+            assert_eq!(reason_of(asset.id, "newer"), "engine-cuda-linux", "{}", asset.id);
+        }
+        for (what, _) in crate::retired::ACPP_CUDA_LINUX {
+            assert_eq!(reason_of(what, "unused"), "acpp-cuda-linux-gone", "{what}");
         }
     }
 

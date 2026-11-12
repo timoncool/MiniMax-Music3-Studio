@@ -1932,6 +1932,8 @@ export const zh = {
     updateWhyDemucsAudiocpp: "分轨由 audio.cpp 服务器中的 HT-Demucs 完成",
     updateWhyHtdemucsOnnxGone: "不再需要 —— HT-Demucs 现已在 audio.cpp 引擎中运行",
     updateWhyMidiAudiocpp: "音频转 MIDI 由 audio.cpp 服务器中的 MuScriptor 完成",
+    updateWhyEngineCudaLinux: "Linux 上歌曲引擎与 audio.cpp 服务器共用的 CUDA 运行时和 cuBLAS，放在同一个文件夹",
+    updateWhyAcppCudaLinuxGone: "audio.cpp 服务器改用歌曲引擎文件夹中的 CUDA 运行时和 cuBLAS，不再读取它自己的副本",
     updateWhyNewer: "本次发布使用了它的另一个构建",
     updateWhyUnused: "不再使用",
 };
