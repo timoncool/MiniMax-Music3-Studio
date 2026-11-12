@@ -160,8 +160,17 @@ pub fn nvidia_card() -> bool {
 /// The build this machine runs, none without an NVIDIA card one of the builds
 /// supports.
 pub fn current() -> Option<CudaBuild> {
+    device().and_then(|(compute, driver)| cuda_build(compute, driver)).filter(|build| SHIPPED.contains(build))
+}
+
+/// The CUDA line this card and driver run, whether or not the engine ships that build here: for the programs that
+/// come with both of their own (llama.cpp's CUDA 12 and 13 builds).
+pub fn card() -> Option<CudaBuild> {
     device().and_then(|(compute, driver)| cuda_build(compute, driver))
 }
+
+/// The CUDA builds the engine carries, the same two on Windows and Linux.
+const SHIPPED: &[CudaBuild] = &[CudaBuild::Cuda13, CudaBuild::Cuda12];
 
 /// The card a CUDA failure happened on, in what a report needs to tell a missing
 /// architecture from an old driver: its name, compute capability, driver and the

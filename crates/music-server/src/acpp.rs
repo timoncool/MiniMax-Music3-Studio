@@ -319,7 +319,7 @@ pub fn server_ids(build: Build) -> &'static [&'static str] {
     }
 }
 
-/// The build of the server for `runtime`: the processor when it is chosen; else the card's CUDA build, Vulkan on a
+/// The build of the server for `runtime`: the processor when it is chosen; else the card's CUDA line, Vulkan on a
 /// card CUDA does not run (AMD, Intel), the processor without a card; a Mac its Metal program.
 pub fn build_for(runtime: OnnxFlavour) -> Result<Build> {
     if let Some(mac) = Build::for_this_mac() {
@@ -331,12 +331,18 @@ pub fn build_for(runtime: OnnxFlavour) -> Result<Build> {
     if matches!(runtime, OnnxFlavour::Cpu) {
         return Ok(Build::Cpu);
     }
-    Ok(match crate::cuda_build::current() {
+    Ok(build_for_card(crate::cuda_build::card(), crate::presets::display_card().is_some()))
+}
+
+/// The server comes in both CUDA lines on every platform, so the card's own line decides, not the builds the
+/// engine ships here.
+fn build_for_card(line: Option<crate::cuda_build::CudaBuild>, display_card: bool) -> Build {
+    match line {
         Some(crate::cuda_build::CudaBuild::Cuda13) => Build::Cuda13,
         Some(crate::cuda_build::CudaBuild::Cuda12) => Build::Cuda12,
-        _ if crate::presets::display_card().is_some() => Build::Vulkan,
+        _ if display_card => Build::Vulkan,
         _ => Build::Cpu,
-    })
+    }
 }
 
 /// Whether a build computes on the graphics card.
@@ -734,6 +740,15 @@ mod tests {
             assert_eq!(build_for(OnnxFlavour::Cpu).unwrap(), Build::Cpu);
             assert!(!on_card(Build::Cpu));
         }
+    }
+
+    #[test]
+    fn a_cuda12_card_gets_the_cuda12_server_where_the_engine_has_no_cuda12_build() {
+        use crate::cuda_build::CudaBuild;
+        assert_eq!(build_for_card(Some(CudaBuild::Cuda12), true), Build::Cuda12);
+        assert_eq!(build_for_card(Some(CudaBuild::Cuda13), true), Build::Cuda13);
+        assert_eq!(build_for_card(None, true), Build::Vulkan);
+        assert_eq!(build_for_card(None, false), Build::Cpu);
     }
 
     #[test]
