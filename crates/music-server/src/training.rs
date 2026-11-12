@@ -487,7 +487,7 @@ pub(crate) fn listen_pack() -> &'static [Asset] {
             model(
                 "beat-this",
                 "Beat This! (tempo)",
-                "https://github.com/mosynthkey/beat_this_cpp/raw/335fc71f67e0b4d472dbf1f68a2aa77822c25a04/onnx/beat_this.onnx",
+                "https://github.com/mosynthkey/beat_this_cpp/raw/07ab790a9ec2eda8093d52d249e3ec4f0510ee72/onnx/beat_this.onnx",
                 "models/audio-facts/beat_this.onnx",
                 83_077_778,
             ),
