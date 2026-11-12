@@ -1583,7 +1583,7 @@ export const zh = {
     midiStage_transcribing: '正在听写音符',
     midiStage_done: '完成',
     midiInstruments: '种乐器',
-    midiLicense: 'MuScriptor（Kyutai 与 Mirelo），HOT-Step 原生移植。权重 CC BY-NC 4.0：仅限非商业用途。',
+    midiLicense: 'MuScriptor（Kyutai 与 Mirelo），由 audio.cpp 运行。权重 CC BY-NC 4.0：仅限非商业用途。',
     midiMenu: '转为 MIDI',
     midiPlay: '播放',
     midiPause: '暂停',

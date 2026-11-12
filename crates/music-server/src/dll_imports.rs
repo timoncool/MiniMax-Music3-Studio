@@ -432,8 +432,8 @@ mod tests {
         let engine_libraries: Vec<PathBuf> = cublas13.iter().chain(cublas12.iter()).cloned().collect();
         loads.extend(bundle_loads(&resources, &engine_libraries));
 
-        let tools = Unit::of_downloader("HOT-Step tools", vec![crate::midi::tool_asset()], |root| {
-            vec![crate::midi::Transcriber::new(root).downloader().clone()]
+        let tools = Unit::of_downloader("HOT-Step tools", vec![&crate::training::pack()[0]], |root| {
+            vec![crate::training::Training::new(root, crate::PRIMARY_MUSIC_ENGINE_ID).downloader().clone()]
         });
         if let Some(folder) = found(&tools, &mut skipped) {
             let mut more = vec![engine_folder.clone()];

@@ -1,55 +1,19 @@
 //! Audio to MIDI: MuScriptor (Kyutai & Mirelo, arXiv:2607.08168) run by
-//! HOT-Step's native GGML port, `ace-midi`, shipped here as `music-midi.exe`.
+//! audio.cpp's server, which reads a size's safetensors folder as it is.
 //!
-//! Nothing of it comes with the studio. The transcriber is a release asset
-//! built from the same HOT-Step commit as the trainer, and the weights come
-//! from an open mirror of the gated official repositories (the same files,
-//! byte for byte); both are fetched the first time a track is turned into
-//! MIDI, or from the tools page before that. The code is MIT; the weights are
-//! CC BY-NC 4.0, which the tools page says.
+//! Nothing of it comes with the studio. The server is audio.cpp's release,
+//! and the weights come from an open mirror of the gated official repositories
+//! (the same files, byte for byte); both are fetched the first time a track is
+//! turned into MIDI, or from the tools page before that. The code is MIT; the
+//! weights are CC BY-NC 4.0, which the tools page says.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
 use crate::downloads::{Asset, AssetKind, Downloader};
-
-#[derive(Deserialize)]
-struct Source {
-    commit: String,
-    shipped_as: String,
-    release_tag: String,
-    asset: String,
-    bytes: u64,
-}
-
-fn source() -> &'static Source {
-    static SOURCE: OnceLock<Source> = OnceLock::new();
-    SOURCE.get_or_init(|| serde_json::from_str(include_str!("../../../engines/music-midi-source.json")).expect("engines/music-midi-source.json is valid"))
-}
-
-/// The name every release folder of the transcriber starts with.
-const TOOL_FOLDER: &str = "music-midi";
-
-/// The transcriber that ships inside the macOS app bundle and the Linux
-/// packages, in `resources/music-midi` beside the engine; the downloadable
-/// archive is a Windows build.
-fn bundled_tool() -> Option<PathBuf> {
-    if cfg!(windows) {
-        return None;
-    }
-    let tool = crate::engine_bundle_root().parent()?.join(TOOL_FOLDER).join(TOOL_FOLDER);
-    tool.is_file().then_some(tool)
-}
-
-/// The folder a release's archive unpacks into, its tag: a newer release is a
-/// folder of its own, so an older transcriber on disk is never taken for it.
-fn tool_folder() -> &'static str {
-    static FOLDER: OnceLock<&'static str> = OnceLock::new();
-    FOLDER.get_or_init(|| leak(source().release_tag.clone()))
-}
 
 /// One size of the model.
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -82,29 +46,8 @@ fn leak(text: String) -> &'static str {
     Box::leak(text.into_boxed_str())
 }
 
-/// The transcriber's archive.
-pub fn tool_asset() -> &'static Asset {
-    static ASSET: OnceLock<Asset> = OnceLock::new();
-    ASSET.get_or_init(|| {
-        let source = source();
-        Asset {
-            id: "music-midi",
-            label: leak(format!("Audio to MIDI (HOT-Step {})", &source.commit[..8])),
-            kind: AssetKind::Runtime,
-            url: leak(format!("https://github.com/timoncool/YuE2-Studio/releases/download/{}/{}", source.release_tag, source.asset)),
-            relative_path: leak(source.asset.clone()),
-            bytes: source.bytes,
-            unzip_into: Some(tool_folder()),
-            marker: leak(source.shipped_as.clone()),
-            pick: &[],
-            vram_gb: None,
-            note: "",
-        }
-    })
-}
-
 /// A size's two files, from the open mirror at a fixed revision.
-fn weight_assets(size: &'static Size) -> &'static [Asset] {
+pub(crate) fn weight_assets(size: &'static Size) -> &'static [Asset] {
     static ASSETS: OnceLock<HashMap<&'static str, Vec<Asset>>> = OnceLock::new();
     ASSETS.get_or_init(|| {
         SIZES
@@ -130,35 +73,24 @@ fn weight_assets(size: &'static Size) -> &'static [Asset] {
         .as_slice()
 }
 
-/// The transcriber and the model sizes on disk.
+/// The model sizes on disk, and audio.cpp's server that runs them.
 pub struct Transcriber {
     downloader: Downloader,
+    acpp: Arc<crate::acpp::Acpp>,
 }
 
 impl Transcriber {
-    pub fn new(data_root: &Path) -> Self {
-        Self { downloader: Downloader::with_runtimes(data_root.join("midi"), crate::training::tools_root(data_root)) }
+    pub fn new(data_root: &Path, acpp: Arc<crate::acpp::Acpp>) -> Self {
+        Self { downloader: Downloader::new(data_root.join("midi")), acpp }
     }
 
     pub fn downloader(&self) -> &Downloader {
         &self.downloader
     }
 
-    /// `MM3_MIDI_BIN` in a developer build, else the one the archive unpacked.
-    pub fn tool(&self) -> PathBuf {
-        std::env::var_os("MM3_MIDI_BIN")
-            .map(PathBuf::from)
-            .or_else(bundled_tool)
-            .unwrap_or_else(|| self.downloader.runtime_dir(tool_folder()).join(&source().shipped_as))
-    }
-
-    /// The transcribers of earlier releases; nothing runs them any more.
-    pub fn remove_older_tools(&self) {
-        crate::training::remove_older_tool_folders(&self.downloader, tool_folder(), TOOL_FOLDER);
-    }
-
-    pub fn tool_installed(&self) -> bool {
-        self.tool().is_file()
+    /// audio.cpp's server of this build is installed.
+    pub fn server_installed(&self, build: acpp_server::asset::Build) -> bool {
+        self.acpp.installed(build)
     }
 
     pub fn model_dir(&self, size: &Size) -> PathBuf {
@@ -169,17 +101,12 @@ impl Transcriber {
         weight_assets(size).iter().all(|asset| self.downloader.is_installed(asset))
     }
 
-    /// What is still missing before a size can transcribe.
+    /// The weights of a size not downloaded yet.
     pub fn missing(&self, size: &'static Size) -> Vec<&'static Asset> {
-        let mut assets = Vec::new();
-        // The archive is a Windows build; elsewhere the tool ships with the app.
-        if cfg!(windows) && !self.tool_installed() {
-            assets.push(tool_asset());
-        }
-        assets.extend(weight_assets(size).iter().filter(|asset| !self.downloader.is_installed(asset)));
-        assets
+        weight_assets(size).iter().filter(|asset| !self.downloader.is_installed(asset)).collect()
     }
 
+    /// The weights of a size still to download.
     pub fn missing_bytes(&self, size: &'static Size) -> u64 {
         self.missing(size).iter().map(|asset| asset.bytes.saturating_sub(self.downloader.partial_bytes(asset))).sum()
     }
@@ -268,48 +195,46 @@ pub struct Sidecar {
     pub notes: Vec<Note>,
 }
 
-/// Collects the transcriber's JSON lines into notes and progress.
+/// Collects the transcriber's events into notes.
 #[derive(Default)]
 pub struct Events {
     pub notes: Vec<Note>,
     open: HashMap<i64, usize>,
-    pub chunks_done: u32,
-    pub chunks_total: u32,
     pub finished: bool,
 }
 
 impl Events {
-    /// Takes one line of `--jsonl` output; anything that is not an event is ignored.
-    pub fn take(&mut self, line: &str) {
-        let Ok(event) = serde_json::from_str::<serde_json::Value>(line.trim()) else { return };
-        match event["type"].as_str() {
-            Some("progress") => {
-                self.chunks_done = event["completed"].as_u64().unwrap_or(0) as u32;
-                self.chunks_total = event["total"].as_u64().unwrap_or(0) as u32;
-            }
-            Some("note_start") => {
-                let start = event["time"].as_f64().unwrap_or(0.0);
-                self.notes.push(Note {
-                    pitch: event["pitch"].as_u64().unwrap_or(0).min(127) as u8,
-                    start,
-                    end: start,
-                    instrument: event["instrument"].as_str().unwrap_or("unknown").to_string(),
-                    velocity: None,
-                });
-                if let Some(index) = event["index"].as_i64() {
-                    self.open.insert(index, self.notes.len() - 1);
-                }
-            }
-            Some("note_end") => {
-                if let (Some(index), Some(time)) = (event["index"].as_i64(), event["time"].as_f64()) {
-                    if let Some(at) = self.open.remove(&index) {
-                        self.notes[at].end = time.max(self.notes[at].start);
+    /// Takes the event JSON audio.cpp's MuScriptor answers with (`text`): `start` events with a pitch, a time, an
+    /// index and an instrument, and `end` events naming the start they close. An event of another type is passed over.
+    pub fn take_all(&mut self, text: &str) -> Result<(), String> {
+        let events: Vec<serde_json::Value> = serde_json::from_str(text).map_err(|error| format!("the transcriber's events are not JSON: {error}"))?;
+        for event in events {
+            match event["type"].as_str() {
+                Some("start") => {
+                    let start = event["start_time"].as_f64().unwrap_or(0.0);
+                    self.notes.push(Note {
+                        pitch: event["pitch"].as_u64().unwrap_or(0).min(127) as u8,
+                        start,
+                        end: start,
+                        instrument: event["instrument"].as_str().unwrap_or("unknown").to_string(),
+                        velocity: None,
+                    });
+                    if let Some(index) = event["index"].as_i64() {
+                        self.open.insert(index, self.notes.len() - 1);
                     }
                 }
+                Some("end") => {
+                    if let (Some(index), Some(time)) = (event["start_event_index"].as_i64(), event["end_time"].as_f64()) {
+                        if let Some(at) = self.open.remove(&index) {
+                            self.notes[at].end = time.max(self.notes[at].start);
+                        }
+                    }
+                }
+                _ => {}
             }
-            Some("done") => self.finished = true,
-            _ => {}
         }
+        self.finished = true;
+        Ok(())
     }
 
     pub fn instruments(&self) -> Vec<String> {
@@ -325,26 +250,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_transcribers_lines_become_notes_and_progress() {
+    fn the_transcribers_events_become_notes() {
         let mut events = Events::default();
-        for line in [
-            r#"{"type":"progress","completed":0,"total":4}"#,
-            r#"{"type":"note_start","index":0,"pitch":60,"time":0.5,"instrument":"acoustic_piano"}"#,
-            r#"{"type":"note_start","index":1,"pitch":36,"time":0.5,"instrument":"drums"}"#,
-            r#"{"type":"note_end","index":1,"time":0.52}"#,
-            "[ace-midi] a log line",
-            r#"{"type":"note_end","index":0,"time":1.25}"#,
-            r#"{"type":"progress","completed":1,"total":4}"#,
-            r#"{"type":"done","notes":2,"midi_bytes":120}"#,
-        ] {
-            events.take(line);
-        }
+        events
+            .take_all(
+                r#"[{"type":"start","pitch":60,"start_time":0.5,"index":0,"instrument":"acoustic_piano"},
+                    {"type":"start","pitch":36,"start_time":0.5,"index":1,"instrument":"drums"},
+                    {"type":"end","end_time":0.52,"start_event_index":1},
+                    {"type":"end","end_time":1.25,"start_event_index":0}]"#,
+            )
+            .unwrap();
         assert_eq!(events.notes.len(), 2);
         assert_eq!((events.notes[0].pitch, events.notes[0].start, events.notes[0].end), (60, 0.5, 1.25));
         assert_eq!(events.notes[1].instrument, "drums");
-        assert_eq!((events.chunks_done, events.chunks_total), (1, 4));
         assert!(events.finished);
         assert_eq!(events.instruments(), ["acoustic_piano", "drums"]);
+        assert!(Events::default().take_all("[ace-midi] a log line").is_err());
     }
 
     #[test]

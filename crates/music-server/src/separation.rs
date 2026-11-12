@@ -300,7 +300,7 @@ pub fn separate_htdemucs(
     let work = tempfile::tempdir()?;
     let mix = work.path().join("mix.wav");
     write_wav_stereo(&mix, audio)?;
-    let entry = acpp_server::ModelEntry::htdemucs(HTDEMUCS, model);
+    let entry = acpp_server::ModelEntry::htdemucs(crate::acpp::HTDEMUCS, model);
     let result = crate::acpp::run(acpp, build, entry, vec![model.to_path_buf()], serde_json::json!({ "audio": mix }), stop)?;
     let outputs = acpp_server::task_audio(&result).map_err(|error| anyhow::anyhow!("HT-Demucs: {}", crate::acpp::describe(&error)))?;
     let mut stems = Vec::new();
@@ -313,9 +313,6 @@ pub fn separate_htdemucs(
     }
     Ok(Separated { stems, used_gpu: crate::acpp::on_card(build) })
 }
-
-/// HT-Demucs's id in audio.cpp's server.
-pub const HTDEMUCS: &str = "htdemucs";
 
 /// Writes interleaved stereo samples as a 16-bit WAV, which every player and
 /// every editor reads without being asked twice.

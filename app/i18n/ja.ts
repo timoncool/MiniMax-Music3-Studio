@@ -1583,7 +1583,7 @@ export const ja = {
     midiStage_transcribing: '音符を聴き取り中',
     midiStage_done: '完了',
     midiInstruments: '楽器',
-    midiLicense: 'MuScriptor（Kyutai & Mirelo）、HOT-Stepによるネイティブ移植。重みは CC BY-NC 4.0：非商用のみ。',
+    midiLicense: 'MuScriptor（Kyutai & Mirelo）、audio.cpp で実行。重みは CC BY-NC 4.0：非商用のみ。',
     midiMenu: 'MIDIへ',
     midiPlay: '再生',
     midiPause: '一時停止',

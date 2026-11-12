@@ -16,6 +16,12 @@ use serde_json::Value;
 use crate::downloads::{Asset, AssetKind, Downloader};
 use crate::lyrics_sync::OnnxFlavour;
 
+pub const HTDEMUCS: &str = "htdemucs";
+/// The id of a MuScriptor size in the server's config.
+pub fn muscriptor_id(size: &str) -> String {
+    format!("muscriptor-{size}")
+}
+
 /// How long a start may take before the server answers `/health` (it loads no model at start).
 const READY_WITHIN: Duration = Duration::from_secs(60);
 

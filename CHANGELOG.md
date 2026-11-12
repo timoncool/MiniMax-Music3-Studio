@@ -12,6 +12,7 @@ Windows build.
 ### Changed
 
 - **The agent's guide names every platform the studio ships for**, as in ACE-Step Studio ([ACE-Step Studio #68](https://github.com/timoncool/ACE-Step-Studio/pull/68)): the first step of the MCP skill said the studio is a Windows program that needs an NVIDIA card; it now points an agent to the Windows, macOS (Apple silicon) and Linux (experimental) packages of the latest release, and says the engine also runs on the processor and, experimentally, on AMD and Intel cards through Vulkan.
+- **Stems and Audio to MIDI run on audio.cpp's server**, the one karaoke already runs CrisperWhisper on, as in YuE2 Studio: HT-Demucs 6s separates from audio.cpp's own GGUF (f16, 55 MB) on CUDA, on Vulkan on AMD and Intel cards, or on the processor; MuScriptor of every size reads its folder as before. There is one installation of the server for karaoke, stems and MIDI, and it stops when its work is done, so it holds none of the card the songs need. The Quality setting of the stems goes: audio.cpp cuts and joins the segments itself. The update screen removes the ONNX HT-Demucs of earlier versions once the new model and the server are in place.
 - **The song engine runs on ggml 0.29**: minimaxmusic.cpp is brought forward to its upstream, whose ggml carries newer memory handling and Vulkan fixes for AMD and Intel cards; on an RTX 4090 a song is made as fast as before.
 
 ### Fixed

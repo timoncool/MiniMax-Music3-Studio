@@ -1587,7 +1587,7 @@ export const ru = {
     midiStage_transcribing: 'Слушаю ноты',
     midiStage_done: 'Готово',
     midiInstruments: 'инструм.',
-    midiLicense: 'MuScriptor от Kyutai и Mirelo, нативный порт HOT-Step. Веса CC BY-NC 4.0: только некоммерческое использование.',
+    midiLicense: 'MuScriptor от Kyutai и Mirelo, работает на audio.cpp. Веса CC BY-NC 4.0: только некоммерческое использование.',
     midiMenu: 'В MIDI',
     midiPlay: 'Играть',
     midiPause: 'Пауза',

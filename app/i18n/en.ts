@@ -1588,7 +1588,7 @@ export const en = {
     midiStage_transcribing: 'Listening for notes',
     midiStage_done: 'Done',
     midiInstruments: 'instruments',
-    midiLicense: 'MuScriptor by Kyutai & Mirelo, native port by HOT-Step. Weights CC BY-NC 4.0: non-commercial use.',
+    midiLicense: 'MuScriptor by Kyutai & Mirelo, run by audio.cpp. Weights CC BY-NC 4.0: non-commercial use.',
     midiMenu: 'To MIDI',
     midiPlay: 'Play',
     midiPause: 'Pause',

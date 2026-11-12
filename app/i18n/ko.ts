@@ -1583,7 +1583,7 @@ export const ko = {
     midiStage_transcribing: '음표 듣는 중',
     midiStage_done: '완료',
     midiInstruments: '악기',
-    midiLicense: 'Kyutai & Mirelo의 MuScriptor, HOT-Step의 네이티브 포트. 가중치 CC BY-NC 4.0: 비상업적 사용만.',
+    midiLicense: 'Kyutai & Mirelo의 MuScriptor, audio.cpp에서 실행. 가중치 CC BY-NC 4.0: 비상업적 사용만.',
     midiMenu: 'MIDI로',
     midiPlay: '재생',
     midiPause: '일시정지',
