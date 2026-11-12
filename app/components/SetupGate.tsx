@@ -48,7 +48,7 @@ type SetupStatus = {
   ready: boolean;
   selected_profile_id?: string | null;
   selected_component_ids?: string[] | null;
-  hardware?: { gpuName?: string; totalVramGb?: number; totalRamGb?: number; recommended?: string; reason?: string };
+  hardware?: { gpuName?: string; totalVramGb?: number; totalRamGb?: number; vulkan?: boolean; recommended?: string; reason?: string };
   engine_ready: boolean;
   engine_id: string;
   first_run: boolean;
@@ -880,7 +880,7 @@ export const SetupGate: React.FC<{ onReady?: () => void; mode?: 'first-run' | 's
               prose in a Russian window, and it called the answer "Native
               quality", which reads as the unquantised weights it is not. */}
           {recommended
-            ? `${status?.hardware?.gpuName ?? ''}${status?.hardware?.totalVramGb ? `, ${status.hardware.totalVramGb.toFixed(1)} GB` : ''} — ${recommended.label} · ${bytes(recommended.total_bytes)}`
+            ? `${status?.hardware?.gpuName ?? ''}${status?.hardware?.totalVramGb ? `, ${status.hardware.totalVramGb.toFixed(1)} GB` : ''}${status?.hardware?.vulkan ? ` (${t('recommendedOnVulkan')})` : ''} — ${recommended.label} · ${bytes(recommended.total_bytes)}`
             : status?.hardware?.reason || t('recommendedFallback')}
           . {t('setupResumable')}
         </div>}
