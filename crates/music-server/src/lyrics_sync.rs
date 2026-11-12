@@ -918,7 +918,7 @@ impl LyricsSync {
         if !self.crisper_ready(runtime) {
             bail!("CrisperWhisper is not completely downloaded into {}: download it in Settings - Models", model.display());
         }
-        self.acpp.with_server(build, acpp_server::ModelEntry::crisperwhisper(CRISPERWHISPER, &model), self.crisper_files(), work)
+        self.acpp.with_server(build, acpp_server::ModelEntry::crisperwhisper(CRISPERWHISPER, &model), self.crisper_files(), None, work)
     }
 
     /// The files CrisperWhisper's folder is complete with.
