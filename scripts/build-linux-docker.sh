@@ -30,6 +30,17 @@ if [ "${1:-}" = "--inside" ]; then
     curl -sSfL "https://sdk.lunarg.com/sdk/download/$vulkan/linux/vulkansdk-linux-x86_64-$vulkan.tar.xz" | tar -xJ -C /cache/vulkansdk-$vulkan --strip-components=1
   fi
   export VULKAN_SDK=/cache/vulkansdk-$vulkan/x86_64 PATH=/cache/vulkansdk-$vulkan/x86_64/bin:$PATH
+  # the engine's CUDA 13 and CUDA 12 backends: nvcc, the runtime and cuBLAS of CUDA 13.3 and of CUDA 12.9 from NVIDIA's
+  # Ubuntu 22.04 repository, the packages kept in the cache
+  echo "[..] CUDA 13.3 and 12.9"
+  curl -sSfL -o /tmp/cuda-keyring.deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+  dpkg -i /tmp/cuda-keyring.deb >/dev/null
+  mkdir -p /cache/apt
+  apt-get update -q >/dev/null
+  for cuda in 13-3 12-9; do
+    apt-get install -y -q --no-install-recommends -o Dir::Cache::Archives=/cache/apt cuda-nvcc-$cuda cuda-cudart-dev-$cuda libcublas-dev-$cuda >/dev/null
+  done
+  export CUDA13_ROOT=/usr/local/cuda-13.3 CUDA12_ROOT=/usr/local/cuda-12.9
   echo "[..] source $(git -c safe.directory=/src -C /src rev-parse --short HEAD)"
   rm -rf /cache/src && mkdir -p /cache/src
   git -c safe.directory=/src -C /src archive HEAD | tar -x -C /cache/src
@@ -40,6 +51,16 @@ if [ "${1:-}" = "--inside" ]; then
   bash scripts/build-release-linux.sh > /out/build.log 2>&1 || { echo "[ERROR] build failed"; tail -40 /out/build.log; exit 1; }
   engine=desktop/src-tauri/resources/minimaxmusic-cpp/mm-server
   if ldd "$engine" | grep -i 'not found'; then echo "[ERROR] the engine misses libraries"; exit 1; fi
+  # libcuda.so.1 comes with the display driver, which a build container has not got
+  # the CUDA runtime and cuBLAS come from the toolkits here, from NVIDIA's wheels on the user's machine
+  for build in cuda13:$CUDA13_ROOT cuda12:$CUDA12_ROOT; do
+    backend=desktop/src-tauri/resources/minimaxmusic-cpp/${build%%:*}/libggml-cuda.so
+    [ -f "$backend" ] || { echo "[ERROR] the engine was built without its ${build%%:*} backend"; exit 1; }
+    if LD_LIBRARY_PATH="${build#*:}/targets/x86_64-linux/lib" ldd "$backend" | grep -i 'not found' | grep -v 'libcuda.so'; then
+      echo "[ERROR] the ${build%%:*} backend misses libraries"; exit 1
+    fi
+  done
+  if ls desktop/src-tauri/resources/minimaxmusic-cpp/libcu* >/dev/null 2>&1; then echo "[ERROR] CUDA libraries are packed beside the engine"; exit 1; fi
   # the engine answers --help with its usage and a non-zero code
   "$engine" --help > /tmp/engine-help.txt 2>&1 || true
   grep -q 'Usage' /tmp/engine-help.txt || { echo "[ERROR] the engine does not start"; head -5 /tmp/engine-help.txt; exit 1; }

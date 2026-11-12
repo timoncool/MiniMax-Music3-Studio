@@ -18,7 +18,7 @@ pub enum CudaBuild {
 }
 
 impl CudaBuild {
-    /// The folder beside mm-server.exe that holds this build's ggml-cuda.dll.
+    /// The folder beside mm-server that holds this build's ggml-cuda.dll (libggml-cuda.so on Linux).
     pub fn folder(self) -> &'static str {
         match self {
             CudaBuild::Cuda12 => "cuda12",
@@ -235,6 +235,18 @@ mod tests {
         assert_eq!(cuda_build((3, 5), 581), None);
         assert_eq!(cuda_build((5, 0), 581), None);
         assert_eq!(cuda_build((8, 6), 511), None);
+    }
+
+    /// Linux runs the same table as Windows: a card the table gives CUDA 12 computes on the CUDA 12 build, not on
+    /// Vulkan.
+    #[test]
+    fn the_engine_carries_both_cuda_builds_on_windows_and_linux() {
+        assert_eq!(SHIPPED, &[CudaBuild::Cuda13, CudaBuild::Cuda12]);
+        for (compute, driver) in [((7, 5), 581), ((6, 1), 560), ((8, 9), 566)] {
+            let build = cuda_build(compute, driver).expect("a build for the card");
+            assert!(SHIPPED.contains(&build), "{compute:?} with driver {driver}: {build:?} is not carried");
+        }
+        assert!(UNSUPPORTED.contains("525"), "the refusal names the oldest driver a build runs on");
     }
 
     #[test]
