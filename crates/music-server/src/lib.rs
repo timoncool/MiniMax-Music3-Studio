@@ -1639,7 +1639,7 @@ fn roformer_on_card(state: &AppState, runtime: lyrics_sync::OnnxFlavour) -> bool
             || std::env::var_os("PATH").is_some_and(|path| std::env::split_paths(&path).any(|folder| folder.join(name).is_file()))
     };
     runtime != lyrics_sync::OnnxFlavour::Cpu
-        && lyrics_sync::OnnxFlavour::Auto.card() == Some(lyrics_sync::OnnxCard::Cuda)
+        && lyrics_sync::OnnxFlavour::Auto.uses_cuda()
         && (!cfg!(windows) || engine_runtime::CUDA13_LIBRARIES.iter().all(|name| found(name)))
 }
 
@@ -5514,7 +5514,7 @@ pub fn studio_data_root() -> Option<PathBuf> {
 }
 
 /// Points every CUDA process of the studio - the engine, the trainer, the
-/// assistant, the captioner, and ONNX Runtime inside the service - at the card
+/// assistant, the captioner and the audio.cpp server - at the card
 /// chosen in the engine settings, numbered as nvidia-smi numbers them. Called
 /// by the desktop shell and the standalone service before anything starts.
 /// A chosen card that is not in the computer is not pointed at: CUDA would see no card at all, and the engine start
@@ -6268,13 +6268,7 @@ fn karaoke_set(name: &str, device: lyrics_sync::OnnxFlavour, whisper_model: Opti
     let mut wanted: Vec<String> = Vec::new();
     match name {
         "parakeet" => {
-            // the transcribe.cpp build this machine runs and the model the dropdown names; on a card CUDA does not
-            // run, DirectML comes with it for the tempo model, as before transcribe.cpp (on NVIDIA, separation brings
-            // the CUDA runtime)
-            if device.card() == Some(lyrics_sync::OnnxCard::DirectMl) {
-                wanted.push("onnxruntime".into());
-                wanted.extend(lyrics_sync::DIRECTML_ASSETS.iter().map(|id| id.to_string()));
-            }
+            // the transcribe.cpp build this machine runs and the model the dropdown names
             wanted.extend(lyrics_sync::parakeet_assets(device, whisper_model).into_iter().map(String::from));
         }
         "whisper" => wanted.extend(lyrics_sync::crisper_assets(device).into_iter().map(String::from)),
@@ -8074,6 +8068,15 @@ fn update_plan_now(state: &AppState, karaoke: &lyrics_sync::LyricsSyncConfig, se
     if leftovers.iter().any(|leftover| leftover.what == "htdemucs-onnx" && !leftover.paths.is_empty()) && !state.separator.is_installed() {
         added.push(of(Part::Separation, &separation::MODEL, state.separator.downloader(), None));
     }
+    // the tempo and key of the listening pack move from the card's ONNX Runtime to the processor's
+    if leftovers.iter().any(|leftover| leftover.what == "ort-gpu" && !leftover.paths.is_empty()) && state.training.listen_ready() {
+        let downloader = state.lyrics_sync.downloader();
+        if let Some(runtime) = lyrics_sync::asset("onnxruntime").filter(|asset| !downloader.is_installed(asset)) {
+            if !updated.iter().chain(added.iter()).any(|row: &Candidate| row.id == runtime.id) {
+                added.push(of(Part::Karaoke, runtime, downloader, None));
+            }
+        }
+    }
     // karaoke's server, downloaded here for the stems and Audio to MIDI in use
     for (build, _) in update_acpp_builds(state, &leftovers, separation, options) {
         let downloader = state.lyrics_sync.downloader();
@@ -8194,10 +8197,14 @@ async fn run_update(state: &AppState, rows: &[update_screen::Row]) -> anyhow::Re
     }
     let demucs_ready = htdemucs_installed(state, separation);
     let midi_ready = !midi::SIZES.iter().any(|size| state.midi.model_installed(size)) || midi_build(&options).is_ok_and(|build| state.lyrics_sync.acpp().installed(build));
+    let tempo_ready = !state.training.listen_ready() || state.lyrics_sync.onnxruntime_library().is_some();
     tokio::task::spawn_blocking(move || {
         let mut gone = vec!["parakeet-onnx"];
         if !karaoke_on_whisper(&karaoke) || sync.crisper_ready(karaoke.runtime) {
             gone.push("faster-whisper");
+        }
+        if tempo_ready {
+            gone.push("ort-gpu");
         }
         if demucs_ready {
             gone.push("htdemucs-onnx");

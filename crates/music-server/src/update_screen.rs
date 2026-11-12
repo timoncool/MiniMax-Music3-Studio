@@ -32,7 +32,7 @@ struct Change {
 }
 
 /// The table of changes of this release against 3.7.0. A release that changes what the studio downloads writes its
-/// own rows here; ONNX Runtime on the processor has its reasons in `REASONS` already and adds its rows when it comes.
+/// own rows here.
 /// More specific rows come first: `reason_of` takes the first that matches, so a CUDA library (audiocpp-cuda12-*/
 /// cuda13-*) gets its own reason before the server's.
 const CHANGES: &[Change] = &[
@@ -48,22 +48,23 @@ const CHANGES: &[Change] = &[
     Change { what: "music-train", reason: "hotstep" },
     Change { what: "ace-caption", reason: "hotstep" },
     Change { what: "engine-cuda12-cublas", reason: "cublas-wheel" },
-    Change { what: "cuda-cublas", reason: "cublas-wheel" },
     Change { what: "faster-whisper", reason: "faster-whisper-gone" },
     Change { what: "parakeet-onnx", reason: "parakeet-onnx-gone" },
+    Change { what: "ort-gpu", reason: "ort-gpu-gone" },
+    Change { what: "onnxruntime", reason: "ort-cpu" },
 ];
 
 /// Every reason, by its code, in English; the window says it in its own language by the code.
 pub const REASONS: &[(&str, &str)] = &[
     ("crisperwhisper", "Karaoke and the dataset lyrics are heard by CrisperWhisper 2.0 turbo in the audio.cpp server instead of Faster-Whisper, with a time for every word"),
     ("audiocpp-cuda", "A CUDA library the audio.cpp engine needs on an NVIDIA card"),
-    ("transcribe-avx2", "Built for every processor with AVX2: Parakeet no longer closes the studio on processors without AVX-512"),
+    ("transcribe-avx2", "Parakeet's engine runs on any 64-bit processor and no longer closes the studio on processors without AVX-512"),
     ("llama", "A newer llama.cpp for the assistant"),
     ("hotstep", "A newer build of HOT-Step's tools for training and captions"),
     ("cublas-wheel", "The same cuBLAS 12.9, now from NVIDIA's package with its checksum pinned"),
     ("faster-whisper-gone", "Faster-Whisper is replaced by CrisperWhisper"),
     ("parakeet-onnx-gone", "Parakeet runs on transcribe.cpp; these ONNX models are no longer read"),
-    ("ort-cpu", "Tempo, key and the listening pack run on ONNX Runtime on the processor"),
+    ("ort-cpu", "The tempo and key of a song are measured on the processor, in about 4.5 seconds a three-minute song"),
     ("ort-gpu-gone", "ONNX Runtime no longer runs on the card; its CUDA, cuDNN and DirectML files are not read"),
     ("demucs-audiocpp", "Stems are split by HT-Demucs in the audio.cpp server"),
     ("audiocpp-server", "The audio.cpp engine behind stem separation, karaoke and audio-to-MIDI"),
@@ -351,7 +352,7 @@ mod tests {
     #[test]
     fn a_models_files_are_one_row_and_a_runtime_its_own() {
         let p = plan(
-            vec![candidate("transcribe-engine", false, "runtime/transcribe_engine.dll", Some("https://github.com/timoncool/transcribe.cpp/releases/download/engine-0.1.1/transcribe_engine.dll"))],
+            vec![candidate("transcribe-engine", false, "runtime/transcribe_engine.dll", Some("https://github.com/timoncool/transcribe.cpp/releases/download/engine-0.2.0/transcribe-windows-cpu-x64.zip"))],
             vec![
                 candidate("crisperwhisper-turbo", true, "models/crisperwhisper2-turbo/model.safetensors", None),
                 candidate("crisperwhisper-turbo-config", true, "models/crisperwhisper2-turbo/config.json", None),
@@ -362,7 +363,7 @@ mod tests {
         );
         assert_eq!(p.updated.len(), 1);
         let engine = &p.updated[0];
-        assert_eq!((engine.from.as_deref(), engine.reason_code), (Some("engine-0.1.1"), "transcribe-avx2"));
+        assert_eq!((engine.from.as_deref(), engine.reason_code), (Some("engine-0.2.0"), "transcribe-avx2"));
         assert_eq!(p.added.len(), 1, "a model's files are one row");
         let model = &p.added[0];
         assert_eq!((model.id.as_str(), model.ids.len(), model.bytes, model.download), ("models/crisperwhisper2-turbo", 2, 200, 120));

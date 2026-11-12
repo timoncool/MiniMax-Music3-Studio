@@ -471,9 +471,9 @@ mod tests {
                 loads.extend(folder_loads(&folder, &more));
             }
         }
-        // ONNX Runtime is loaded into the studio's process after its folder joins PATH. Its CUDA build and NVIDIA
-        // libraries are left out: only HT-Demucs uses them, and it moves to audio.cpp.
-        for (name, ids) in [("ONNX Runtime", vec!["onnxruntime"]), ("ONNX Runtime DirectML", vec!["onnxruntime-directml", "directml"])] {
+        // ONNX Runtime is loaded into the studio's process after its folder joins PATH; only its processor build is
+        // downloaded.
+        for (name, ids) in [("ONNX Runtime", vec!["onnxruntime"])] {
             let unit = Unit::of_downloader(name, ids.into_iter().map(karaoke_asset).collect(), karaoke);
             if let Some(folder) = found(&unit, &mut skipped) {
                 let process = vec![folder.clone()];

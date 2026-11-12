@@ -78,7 +78,7 @@ pub const SET: &str = "set";
 pub struct DownloadProgress {
     pub asset_id: String,
     /// Which panel asked for this. The karaoke recogniser and the separator
-    /// share one downloader - they share the ONNX runtime and the CUDA
+    /// share one downloader - they share the audio.cpp server and its CUDA
     /// libraries on disk, so they must - and without this the separator's panel
     /// showed the recogniser's download as its own: its button disappeared and
     /// a percentage of somebody else's gigabytes appeared in its place.
@@ -1267,7 +1267,7 @@ mod tests {
     fn an_install_cut_off_before_its_record_is_not_installed() {
         let root = std::env::temp_dir().join(format!("downloads-{}", uuid::Uuid::now_v7()));
         let downloader = Downloader::new(root.clone());
-        let url = "https://github.com/microsoft/onnxruntime/releases/download/v1.30.0/onnxruntime-win-x64-1.30.0.zip";
+        let url = "https://github.com/microsoft/onnxruntime/releases/download/v1.31.1/onnxruntime-win-x64-1.31.1.zip";
         let runtime = Asset { id: "test-runtime", kind: AssetKind::Runtime, url, relative_path: "runtime/onnxruntime.zip", unzip_into: Some("onnx"), marker: "onnxruntime.dll", ..asset() };
         let (key, size) = crate::install_record::key_file(url).unwrap();
         let record = downloader.record_of(&runtime);
@@ -1300,7 +1300,7 @@ mod tests {
         let runtime = Asset {
             id: "test-llama",
             kind: AssetKind::Runtime,
-            url: "https://github.com/ggml-org/llama.cpp/releases/download/b11900/llama-b11900-bin-win-cuda-13.4-x64.zip",
+            url: "https://github.com/ggml-org/llama.cpp/releases/download/b12248/llama-b12248-bin-win-cuda-13.5-x64.zip",
             relative_path: "runtime/llama.zip",
             unzip_into: Some("cuda"),
             marker: "ggml-cuda",

@@ -1888,7 +1888,7 @@ fn tools() -> &'static [Tool] {
             },
             Tool {
                 name: "separator_runtime",
-                description: "The ONNX runtimes the separator can use (card or processor) and what is downloaded.",
+                description: "The runtimes the separator can use (card or processor) and what is downloaded.",
                 schema: nothing,
                 call: |_| get("/v1/separation/runtime".into()),
             },

@@ -228,8 +228,8 @@ fn other_card() -> Option<(String, f64)> {
 }
 
 
-/// A graphics card of any make - the ONNX parts reach one through DirectML
-/// where CUDA does not run - as the display adapter with the most dedicated
+/// A graphics card of any make - Vulkan reaches one where CUDA does not
+/// run - as the display adapter with the most dedicated
 /// memory. Probed once: the machine's card does not change inside a process.
 pub fn display_card() -> Option<&'static str> {
     static CARD: OnceLock<Option<String>> = OnceLock::new();
