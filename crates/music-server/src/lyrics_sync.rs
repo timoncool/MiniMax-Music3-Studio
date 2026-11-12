@@ -73,7 +73,9 @@ impl LyricsSyncConfig {
 }
 
 /// The audio.cpp server is pinned to its release tag, the CUDA 13 libraries it does not carry to their versions.
+#[cfg(test)]
 const AUDIOCPP_BUILD: &str = "/audio.cpp/releases/download/server-";
+#[cfg(test)]
 const SERVER_CUFFT_BUILD: &str = "12.4.0.43";
 #[cfg(target_os = "linux")]
 const SERVER_CUDART_BUILD: &str = "13.4.92";
@@ -81,6 +83,7 @@ const SERVER_CUDART_BUILD: &str = "13.4.92";
 const SERVER_CUBLAS_BUILD: &str = "13.8.0.4";
 /// The ONNX Runtime the tempo and key models load. Mixing versions deadlocks the loader,
 /// so this is pinned exactly as Dub Studio pins it.
+#[cfg(test)]
 const ONNXRUNTIME_BUILD: &str = "v1.31.1";
 
 /// What a recogniser that heard nothing sung says: a code, not a sentence, so the window puts it in the reader's
@@ -939,6 +942,7 @@ pub struct TimedLine {
     pub words: Vec<(f64, String)>,
 }
 
+#[cfg(test)]
 impl TimedLine {
     pub fn text(&self) -> String {
         self.words.iter().map(|(_, word)| word.as_str()).collect::<Vec<_>>().join(" ")
