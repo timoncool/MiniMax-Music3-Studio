@@ -389,6 +389,7 @@ const JOURNAL: &[(&str, &str, &str)] = &[
     ("library_trash_restore", "restored", "song"),
     ("library_trash_delete", "deleted", "song"),
     ("library_trash_empty", "deleted", "song"),
+    ("karaoke_set", "updated", "karaoke"),
     ("library_import_audio", "imported", "song"),
     ("library_version_select", "updated", "song"),
     ("library_version_delete", "deleted", "version"),
@@ -1906,6 +1907,20 @@ fn tools() -> &'static [Tool] {
                 description: "Remove a library song's karaoke timings.",
                 schema: || id_only("song_id", "library song id"),
                 call: |args| send(Method::DELETE, format!("/v1/library/songs/{}/karaoke", segment(&text(args, "song_id")?)), json!({})),
+            },
+            Tool {
+                name: "karaoke_set",
+                description: "Set a library song's karaoke from a subtitle file on this computer (path: .srt, .ass, .ssa or .lrc) or from LRC text (lrc: one [mm:ss.cc] line each), in place of the recognised timings.",
+                schema: || object(json!({ "song_id": { "type": "string" }, "path": { "type": "string" }, "lrc": { "type": "string" } }), &["song_id"]),
+                call: |args| {
+                    let path = format!("/v1/library/songs/{}/karaoke", segment(&text(args, "song_id")?));
+                    if let Some(lrc) = args.get("lrc").and_then(Value::as_str) {
+                        return send(Method::PUT, path, json!({ "lrc": lrc }));
+                    }
+                    let file = PathBuf::from(text(args, "path")?);
+                    let content = std::fs::read_to_string(&file).map_err(|error| format!("read {}: {error}", file.display()))?;
+                    send(Method::PUT, path, json!({ "content": content, "file_name": file_name(&file) }))
+                },
             },
             Tool {
                 name: "lyrics_recognise",

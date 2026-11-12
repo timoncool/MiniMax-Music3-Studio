@@ -24,6 +24,7 @@ mod dll_imports;
 mod diagnostics;
 mod pin_sha;
 mod engine_runtime;
+mod subimport;
 mod install_record;
 mod lyrics_db;
 mod mcp;
@@ -1088,7 +1089,7 @@ pub async fn serve() -> anyhow::Result<()> {
         .route("/v1/karaoke/install", post(karaoke_install))
         .route("/v1/karaoke/cancel", post(cancel_karaoke_download))
         .route("/v1/karaoke/remove", post(karaoke_remove))
-        .route("/v1/library/songs/{id}/karaoke", post(create_song_karaoke).delete(delete_song_karaoke))
+        .route("/v1/library/songs/{id}/karaoke", post(create_song_karaoke).put(set_song_karaoke).delete(delete_song_karaoke))
         .route("/v1/lyrics/recognise", post(recognise_lyrics))
         .route("/v1/openrouter/catalog", get(openrouter_catalog))
         .route("/v1/openrouter/catalog/refresh", post(refresh_openrouter_catalog))
@@ -6786,6 +6787,54 @@ async fn delete_song_karaoke(
         .set_song_lrc(&id, "")
         .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
     Ok(Json(serde_json::json!({ "lrc": Value::Null })))
+}
+
+#[derive(Debug, Deserialize)]
+struct KaraokeSetRequest {
+    /// The karaoke as LRC, edited line by line in the window.
+    #[serde(default)]
+    lrc: Option<String>,
+    /// A subtitle file's text (SRT, ASS or LRC) and its name, which says its format.
+    #[serde(default)]
+    content: Option<String>,
+    #[serde(default)]
+    file_name: Option<String>,
+}
+
+/// Sets a song's karaoke from the person's own subtitles or from its lines
+/// edited in the window, in place of the recognised timings.
+async fn set_song_karaoke(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(request): Json<KaraokeSetRequest>,
+) -> Result<Json<Value>, (StatusCode, Json<ApiError>)> {
+    let cues = match (&request.content, &request.lrc) {
+        (Some(content), _) => {
+            let extension = request
+                .file_name
+                .as_deref()
+                .and_then(|name| std::path::Path::new(name).extension())
+                .and_then(|extension| extension.to_str())
+                .unwrap_or("srt");
+            subimport::parse(content, extension)
+        }
+        (None, Some(lrc)) => subimport::parse(lrc, "lrc"),
+        (None, None) => return Err(api_error(StatusCode::BAD_REQUEST, "send lrc, or content with file_name".into())),
+    };
+    if cues.is_empty() {
+        return Err(api_error(StatusCode::BAD_REQUEST, "karaoke.no-lines".into()));
+    }
+    // edited lines are kept as written, so a line left alone keeps the times of its words
+    let lrc = match (&request.content, &request.lrc) {
+        (None, Some(lrc)) => format!("{}\n", lrc.trim_end()),
+        _ => subimport::to_lrc(&cues),
+    };
+    state
+        .library
+        .set_song_lrc(&id, &lrc)
+        .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
+        .ok_or_else(|| api_error(StatusCode::NOT_FOUND, "no such song".into()))?;
+    Ok(Json(serde_json::json!({ "lrc": lrc, "lines": cues.len() })))
 }
 
 /// The cloud path: base64 the audio, ask for verbose output, read the times.

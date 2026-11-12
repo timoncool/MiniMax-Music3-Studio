@@ -37,6 +37,7 @@ const REASONS: Record<string, string> = {
     'karaoke.no-match': 'karaokeNoMatch',
     'karaoke.downloading': 'karaokeDownloading',
     'karaoke.model-missing': 'karaokeModelMissing',
+    'karaoke.no-lines': 'karaokeNoLines',
 };
 
 /** The reason in words, or whatever the server said if it is not one of ours. */
