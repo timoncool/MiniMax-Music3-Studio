@@ -811,6 +811,10 @@ struct AssistantConfig {
     cli_model: Option<String>,
     /// Explicit executable for that CLI; empty means PATH.
     cli_path: Option<String>,
+    /// The person's own rules for each task, put after the studio's guide.
+    own_rules: assistant::OwnRules,
+    /// Words and phrases the assistant must not write, one a line or comma-separated.
+    avoid_words: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -6006,6 +6010,8 @@ async fn assistant_status(State(state): State<AppState>) -> Json<Value> {
         "cli_agent": config.cli_agent,
         "cli_model": config.cli_model,
         "cli_path": config.cli_path,
+        "own_rules": config.own_rules,
+        "avoid_words": config.avoid_words,
     }))
 }
 
@@ -6066,6 +6072,8 @@ struct AssistantSettingsRequest {
     cli_agent: Option<Option<String>>,
     cli_model: Option<Option<String>>,
     cli_path: Option<Option<String>>,
+    own_rules: Option<assistant::OwnRules>,
+    avoid_words: Option<Option<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -6175,6 +6183,8 @@ async fn update_assistant_settings(
             cli_agent: incoming.cli_agent.unwrap_or(current.cli_agent).map(|id| id.trim().to_string()).filter(|id| !id.is_empty()),
             cli_model: incoming.cli_model.unwrap_or(current.cli_model),
             cli_path: incoming.cli_path.unwrap_or(current.cli_path),
+            own_rules: incoming.own_rules.unwrap_or(current.own_rules),
+            avoid_words: incoming.avoid_words.unwrap_or(current.avoid_words).filter(|words| !words.trim().is_empty()),
         }
     };
     if let Some(id) = request.cli_agent.as_deref() {
@@ -6928,6 +6938,7 @@ async fn assistant_write_stream(
         ));
     }
     let (system, required) = assistant::instructions(&request);
+    let system = assistant::with_own_rules(system, request.target, &config.own_rules, config.avoid_words.as_deref());
     let user = assistant::user_message(&request);
     let task = request.target;
     let target = assist_target_name(task);
@@ -7304,6 +7315,8 @@ async fn assistant_sections(
 /// asks it many times and releases it once at the end.
 async fn assistant_draft(state: &AppState, request: &assistant::AssistRequest) -> Result<Value, (StatusCode, Json<ApiError>)> {
     let (system, required) = assistant::instructions(request);
+    let config = state.assistant.read().await.clone();
+    let system = assistant::with_own_rules(system, request.target, &config.own_rules, config.avoid_words.as_deref());
     let user = assistant::user_message(request);
     let content = assistant_ask(state, &system, &user, Some(assistant::draft_schema(&required)), request.target).await?;
     let draft = assistant::parse_draft(&content, required).map_err(|error| {
@@ -10581,7 +10594,7 @@ mod tests {
     fn persisted_settings_round_trip_a_complete_custom_component_selection() {
         let settings = PersistedStudioSettings {
             engine_options: EngineOptions { keep_loaded: true, max_batch: Some(2), ..EngineOptions::default() },
-            assistant: AssistantConfig { provider: AssistantProvider::Local, local_base_url: Some("http://127.0.0.1:8080/v1".into()), local_model: Some("gemma".into()), openrouter_model: None, managed_model: None, managed_path: None, reasoning_effort: None, cli_agent: None, cli_model: None, cli_path: None },
+            assistant: AssistantConfig { provider: AssistantProvider::Local, local_base_url: Some("http://127.0.0.1:8080/v1".into()), local_model: Some("gemma".into()), openrouter_model: None, managed_model: None, managed_path: None, reasoning_effort: None, cli_agent: None, cli_model: None, cli_path: None, ..Default::default() },
             configuration: initial_configuration(),
             // Karaoke is off by default and has to survive a restart the same
             // way the assistant does.

@@ -5,6 +5,7 @@ import { useI18n } from '../context/I18nContext';
 import { RescanButton } from './RescanButton';
 import { UpdatePlanView } from './UpdateScreen';
 import { ManualDownloads } from './ManualDownloads';
+import { AssistantRules } from './AssistantRules';
 import { MirrorOffer } from './MirrorOffer';
 import { poll } from '../services/poll';
 import { DevicePicker, type Device } from './DevicePicker';
@@ -1191,7 +1192,12 @@ export const SetupGate: React.FC<{ onReady?: () => void; mode?: 'first-run' | 's
               cancelUrl="/v1/assistant/runtime/cancel"
               serverField
             >
-              {(engine) => <AssistantExtras engine={engine} />}
+              {(engine) => (
+                <>
+                  <AssistantExtras engine={engine} />
+                  {engine !== 'none' && <AssistantRules />}
+                </>
+              )}
             </OptionalGroup>
             <OptionalGroup
               title={t('stemsTitle')}
