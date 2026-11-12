@@ -7871,20 +7871,19 @@ fn update_data_root(state: &AppState) -> &std::path::Path {
     state.settings_path.parent().expect("the settings file lies in the data folder")
 }
 
-/// The builds of audio.cpp's server that take the place of what the person used, with the reason the update screen
-/// gives: the stems' when the ONNX HT-Demucs lies there, Audio to MIDI's when HOT-Step's transcriber does and a
-/// MuScriptor size is on disk.
+/// The builds of audio.cpp's server the tools in use need, with the panel that downloads each: the stems' when the
+/// ONNX HT-Demucs lies there, Audio to MIDI's when a MuScriptor size is on disk.
 fn update_acpp_builds(state: &AppState, leftovers: &[update_screen::Leftover], separation: lyrics_sync::OnnxFlavour, options: &EngineOptions) -> Vec<(acpp_server::asset::Build, &'static str)> {
     let left = |what: &str| leftovers.iter().any(|leftover| leftover.what == what && !leftover.paths.is_empty());
     let mut builds = Vec::new();
     if left("htdemucs-onnx") {
         if let Ok(build) = separation_build(separation) {
-            builds.push((build, "demucs-audiocpp"));
+            builds.push((build, "separation"));
         }
     }
-    if left("midi-hotstep") && midi::SIZES.iter().any(|size| state.midi.model_installed(size)) {
+    if midi::SIZES.iter().any(|size| state.midi.model_installed(size)) {
         if let Ok(build) = midi_build(options) {
-            builds.push((build, "midi-audiocpp"));
+            builds.push((build, "midi"));
         }
     }
     builds
@@ -7903,7 +7902,6 @@ fn update_plan_now(state: &AppState, karaoke: &lyrics_sync::LyricsSyncConfig, se
         bytes: asset.bytes,
         downloaded: downloader.partial_bytes(asset),
         earlier,
-        reason: None,
     };
     let mut updated = Vec::new();
     for part in [Part::Engine, Part::Karaoke, Part::Separation, Part::Midi, Part::Training, Part::Listening] {
@@ -7927,7 +7925,6 @@ fn update_plan_now(state: &AppState, karaoke: &lyrics_sync::LyricsSyncConfig, se
                 bytes: asset.bytes,
                 downloaded: assistant.partial_bytes(asset),
                 earlier,
-                reason: None,
             });
         }
     }
@@ -7946,12 +7943,12 @@ fn update_plan_now(state: &AppState, karaoke: &lyrics_sync::LyricsSyncConfig, se
     if leftovers.iter().any(|leftover| leftover.what == "htdemucs-onnx" && !leftover.paths.is_empty()) && !state.separator.is_installed() {
         added.push(of(Part::Separation, &separation::MODEL, state.separator.downloader(), None));
     }
-    // karaoke's server, downloaded here for the tool that replaces what a former release left
-    for (build, reason) in update_acpp_builds(state, &leftovers, separation, options) {
+    // karaoke's server, downloaded here for the stems and Audio to MIDI in use
+    for (build, _) in update_acpp_builds(state, &leftovers, separation, options) {
         let downloader = state.lyrics_sync.downloader();
         for asset in state.lyrics_sync.acpp().missing(build) {
             if !updated.iter().chain(added.iter()).any(|row: &Candidate| row.id == asset.id) {
-                added.push(Candidate { reason: Some(reason), ..of(Part::Karaoke, asset, downloader, None) });
+                added.push(of(Part::Karaoke, asset, downloader, None));
             }
         }
     }
@@ -8061,8 +8058,8 @@ async fn run_update(state: &AppState, rows: &[update_screen::Row]) -> anyhow::Re
     let data_root = update_data_root(state).to_path_buf();
     // the CUDA 13 build of the tools' server runs on the engine's cuBLAS 13, which the engine's downloader keeps
     let options = state.engine_options.read().await.clone();
-    for (build, reason) in update_acpp_builds(state, &retired::leftovers(&data_root), separation, &options) {
-        install_acpp(state, build, if reason == "midi-audiocpp" { "midi" } else { "separation" }).await?;
+    for (build, scope) in update_acpp_builds(state, &retired::leftovers(&data_root), separation, &options) {
+        install_acpp(state, build, scope).await?;
     }
     let demucs_ready = htdemucs_installed(state, separation);
     let midi_ready = !midi::SIZES.iter().any(|size| state.midi.model_installed(size)) || midi_build(&options).is_ok_and(|build| state.lyrics_sync.acpp().installed(build));

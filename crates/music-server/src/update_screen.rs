@@ -32,14 +32,14 @@ struct Change {
 }
 
 /// The table of changes of this release against 3.7.0. A release that changes what the studio downloads writes its
-/// own rows here; ONNX Runtime on the processor, HT-Demucs, MuScriptor and SheetSage2 on audio.cpp have their reasons
-/// in `REASONS` already and add their rows when they come. More specific rows come first: `reason_of` takes the first
-/// that matches, so a CUDA library (audiocpp-cuda12-*/cuda13-*) gets its own reason before the server catch-all.
+/// own rows here; ONNX Runtime on the processor has its reasons in `REASONS` already and adds its rows when it comes.
+/// More specific rows come first: `reason_of` takes the first that matches, so a CUDA library (audiocpp-cuda12-*/
+/// cuda13-*) gets its own reason before the server's.
 const CHANGES: &[Change] = &[
     Change { what: "crisperwhisper-turbo*", reason: "crisperwhisper" },
     Change { what: "audiocpp-cuda12-*", reason: "audiocpp-cuda" },
     Change { what: "audiocpp-cuda13-*", reason: "audiocpp-cuda" },
-    Change { what: "audiocpp-*", reason: "crisperwhisper" },
+    Change { what: "audiocpp-*", reason: "audiocpp-server" },
     Change { what: "transcribe-engine*", reason: "transcribe-avx2" },
     Change { what: "htdemucs-6s", reason: "demucs-audiocpp" },
     Change { what: "htdemucs-onnx", reason: "htdemucs-onnx-gone" },
@@ -47,7 +47,6 @@ const CHANGES: &[Change] = &[
     Change { what: "llama-*", reason: "llama" },
     Change { what: "music-train", reason: "hotstep" },
     Change { what: "ace-caption", reason: "hotstep" },
-    Change { what: "music-midi", reason: "hotstep" },
     Change { what: "engine-cuda12-cublas", reason: "cublas-wheel" },
     Change { what: "cuda-cublas", reason: "cublas-wheel" },
     Change { what: "faster-whisper", reason: "faster-whisper-gone" },
@@ -60,13 +59,14 @@ pub const REASONS: &[(&str, &str)] = &[
     ("audiocpp-cuda", "A CUDA library the audio.cpp engine needs on an NVIDIA card"),
     ("transcribe-avx2", "Built for every processor with AVX2: Parakeet no longer closes the studio on processors without AVX-512"),
     ("llama", "A newer llama.cpp for the assistant"),
-    ("hotstep", "A newer build of HOT-Step's tools for training, captions and audio to MIDI"),
+    ("hotstep", "A newer build of HOT-Step's tools for training and captions"),
     ("cublas-wheel", "The same cuBLAS 12.9, now from NVIDIA's package with its checksum pinned"),
     ("faster-whisper-gone", "Faster-Whisper is replaced by CrisperWhisper"),
     ("parakeet-onnx-gone", "Parakeet runs on transcribe.cpp; these ONNX models are no longer read"),
     ("ort-cpu", "Tempo, key and the listening pack run on ONNX Runtime on the processor"),
     ("ort-gpu-gone", "ONNX Runtime no longer runs on the card; its CUDA, cuDNN and DirectML files are not read"),
     ("demucs-audiocpp", "Stems are split by HT-Demucs in the audio.cpp server"),
+    ("audiocpp-server", "The audio.cpp engine behind stem separation, karaoke and audio-to-MIDI"),
     ("htdemucs-onnx-gone", "No longer needed — HT-Demucs now runs in the audio.cpp engine"),
     ("midi-audiocpp", "Audio to MIDI runs MuScriptor in the audio.cpp server"),
     ("newer", "This release uses another build of it"),
@@ -99,9 +99,6 @@ pub struct Candidate {
     pub downloaded: u64,
     /// What an earlier release left of it: the URL its record names, or nothing when its files lie there unrecorded.
     pub earlier: Option<String>,
-    /// Why it is downloaded, when that is not its own row of the table of changes: a download one part shares with
-    /// another (audio.cpp's server, karaoke's and the stems') says the part it comes for.
-    pub reason: Option<&'static str>,
 }
 
 /// A leftover of former releases, by the name the table of changes knows it, and its files and folders.
@@ -188,7 +185,7 @@ fn rows(candidates: Vec<Candidate>, default_reason: &'static str) -> Vec<Row> {
             row.download += left;
             continue;
         }
-        let code = candidate.reason.unwrap_or_else(|| reason_of(candidate.id, default_reason));
+        let code = reason_of(candidate.id, default_reason);
         rows.push(Row {
             id: key,
             part: candidate.part,
@@ -310,15 +307,7 @@ mod tests {
             bytes: 100,
             downloaded: 40,
             earlier: earlier.map(String::from),
-            reason: None,
         }
-    }
-
-    #[test]
-    fn a_shared_download_says_the_part_it_comes_for() {
-        let server = |reason| Candidate { id: "audiocpp-cpu", model: false, relative_path: "runtime/audiocpp-cpu.zip", reason, ..candidate("audiocpp-cpu", false, "", None) };
-        assert_eq!(rows(vec![server(None)], "newer")[0].reason_code, "crisperwhisper");
-        assert_eq!(rows(vec![server(Some("demucs-audiocpp"))], "newer")[0].reason_code, "demucs-audiocpp");
     }
 
     #[test]
@@ -329,13 +318,17 @@ mod tests {
     }
 
     #[test]
-    fn an_audiocpp_cuda_library_reads_differently_from_the_server() {
-        // #180: a CUDA library must not inherit the server's "heard by CrisperWhisper" reason.
-        assert_eq!(reason_of("audiocpp-cuda12-cufft", "newer"), "audiocpp-cuda");
-        assert_eq!(reason_of("audiocpp-cuda12-cudart", "newer"), "audiocpp-cuda");
-        assert_eq!(reason_of("audiocpp-cuda13-cufft", "newer"), "audiocpp-cuda");
-        assert_eq!(reason_of("audiocpp-cuda12", "newer"), "crisperwhisper");
-        assert_eq!(reason_of("audiocpp-vulkan", "newer"), "crisperwhisper");
+    fn the_audiocpp_engine_and_its_cuda_libraries_read_apart() {
+        // The server builds carry stems, karaoke and MIDI; the CUDA libraries are not the server (#180).
+        for library in ["audiocpp-cuda12-cufft", "audiocpp-cuda12-cudart", "audiocpp-cuda13-cufft"] {
+            assert_eq!(reason_of(library, "newer"), "audiocpp-cuda", "{library}");
+        }
+        for server in ["audiocpp-cuda13", "audiocpp-cuda12", "audiocpp-vulkan", "audiocpp-cpu"] {
+            assert_eq!(reason_of(server, "unused"), "audiocpp-server", "{server}");
+        }
+        for code in ["audiocpp-cuda", "audiocpp-server"] {
+            assert!(REASONS.iter().any(|(reason, _)| *reason == code), "{code} has its text");
+        }
     }
 
     #[test]
