@@ -313,16 +313,18 @@ pub async fn describe_song_style(State(state): State<AppState>, Path(song_id): P
     let hooks = crate::card_hooks(&state).await;
     (hooks.take)().await;
     crate::release_assistant_unless_kept(&state).await;
+    let on_card = !crate::processor_chosen(&state).await;
     let heard = async {
-        if crate::cuda_build::current() == Some(crate::cuda_build::CudaBuild::Cuda13) {
+        if on_card && crate::cuda_build::current() == Some(crate::cuda_build::CudaBuild::Cuda13) {
             state.engine_runtime.install_missing(crate::cuda_build::CudaBuild::Cuda13).await.context("install cuBLAS for the captioner")?;
         }
-        let (captioner, moss, facts_dir, libraries) = (state.training.captioner(), state.training.moss_dir(), state.training.audio_facts_dir(), crate::engine_bundle_root());
+        // the card's cuBLAS goes on the captioner's path only when it runs on the card
+        let (captioner, moss, facts_dir, libraries) = (state.training.captioner(), state.training.moss_dir(), state.training.audio_facts_dir(), on_card.then(crate::engine_bundle_root));
         tokio::task::spawn_blocking(move || -> anyhow::Result<listen::Heard> {
             let facts = audio_facts::Measurer::load(&facts_dir, card)?.measure_mono(&audio_facts::decode(&audio)?)?;
             let cancel = AtomicBool::new(false);
             let mut captions: Option<anyhow::Result<listen::Captions>> = None;
-            listen::hear_batch(&captioner, &moss, Some(&libraries), std::slice::from_ref(&audio), &cancel, |_, heard| captions = Some(heard))?;
+            listen::hear_batch(&captioner, &moss, libraries.as_deref(), std::slice::from_ref(&audio), &cancel, |_, heard| captions = Some(heard))?;
             let captions = captions.context("MOSS-Music wrote nothing for the song")??;
             Ok(listen::heard(&captions, &facts))
         })
@@ -720,9 +722,11 @@ async fn listen_branch(state: &AppState, job: &Job, style_items: &[&training::Da
         crate::release_assistant_unless_kept(state).await;
         // The captioner is a CUDA 13 build and imports cuBLAS 13 from beside
         // the engine; on a card that build does not run, it runs on the processor
-        if crate::cuda_build::current() == Some(crate::cuda_build::CudaBuild::Cuda13) {
+        // the processor chosen in Settings is kept to here too, without the card's cuBLAS
+        let on_card = !crate::processor_chosen(state).await;
+        if on_card && crate::cuda_build::current() == Some(crate::cuda_build::CudaBuild::Cuda13) {
             state.engine_runtime.install_missing(crate::cuda_build::CudaBuild::Cuda13).await.context("install cuBLAS for the captioner")?;
-        } else {
+        } else if on_card {
             update(&shared, |status| status.notices.push("listen_on_cpu"));
         }
         let card = state.lyrics_sync.onnx_card(crate::lyrics_sync::OnnxFlavour::Auto)?;
@@ -776,9 +780,10 @@ async fn listen_branch(state: &AppState, job: &Job, style_items: &[&training::Da
         }
         let (task_shared, task_cancel, task_facts, task_measured_all) = (shared.clone(), cancel.clone(), facts.clone(), measured_all.clone());
         let (training, dataset_id, task_ids, task_job) = (state.training.clone(), id.to_string(), ids.clone(), job.clone());
-        let libraries = crate::engine_bundle_root();
+        // the card's cuBLAS goes on the captioner's path only when it runs on the card
+        let libraries = on_card.then(crate::engine_bundle_root);
         let log = tokio::task::spawn_blocking(move || {
-            listen::hear_batch(&captioner, &moss, Some(&libraries), &audio, &task_cancel, |index, caption| {
+            listen::hear_batch(&captioner, &moss, libraries.as_deref(), &audio, &task_cancel, |index, caption| {
                 let item = &task_ids[index];
                 let measured = loop {
                     if let Some(measured) = task_facts.lock().unwrap_or_else(|poisoned| poisoned.into_inner())[index].clone() {

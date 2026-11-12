@@ -4669,7 +4669,41 @@ async fn engine_at_work(state: &AppState) -> bool {
     working && state.engine.lock().await.as_mut().is_some_and(|engine| engine.process_alive())
 }
 
+/// Starts the engine again with the saved options; an engine that does not start is counted for the hub by a reason
+/// that names no path on the computer.
 async fn restart_engine(state: &AppState) -> Result<(), String> {
+    let started = start_engine_again(state).await;
+    if let (Err(error), Some(hub)) = (&started, &state.hub) {
+        hub.count("engine_failed", 1);
+        hub.failed("engine", &engine_failure_code(error));
+    }
+    started
+}
+
+/// What an engine that did not start died of, for the hub: the exit code and Windows' record of the fault when there
+/// is one, else the kind of failure - never a path, so one cause is one row.
+fn engine_failure_code(error: &str) -> String {
+    if let Some(at) = error.find("exited during startup with status") {
+        let rest = &error[at + "exited during startup with status".len()..];
+        let exit = rest.split(';').next().unwrap_or_default().trim().trim_start_matches("exit code:").trim();
+        let fault = rest.split_once("; ").map(|(_, fault)| format!("; {fault}")).unwrap_or_default();
+        return format!("exited during startup {exit}{fault}");
+    }
+    let kinds = [
+        ("did not pass GET /health", "no answer before the startup timeout"),
+        ("CUDA libraries could not be downloaded", "runtime libraries not installed"),
+        ("has no device", "device not present"),
+        ("runs neither CUDA build", "CUDA not supported by the card or driver"),
+        ("still answering on the engine port", "engine port busy"),
+        ("did not start is already running on the engine port", "engine port busy"),
+        ("engine bundle is incomplete", "engine bundle incomplete"),
+        ("runtime was not found", "engine runtime not found"),
+        ("graphics card chosen in Settings", "chosen card not present"),
+    ];
+    kinds.iter().find(|(marker, _)| error.contains(marker)).map(|(_, kind)| kind.to_string()).unwrap_or_else(|| "other".into())
+}
+
+async fn start_engine_again(state: &AppState) -> Result<(), String> {
     let mut supervisor = state.engine.lock().await;
     let owned = supervisor.is_some();
     if let Some(engine) = supervisor.as_mut() {
@@ -5035,6 +5069,12 @@ fn engine_location(options: EngineOptions) -> music_engine::mm_server::MmServerL
         port: Some(music_engine::mm_server::engine_port()),
         options: options.to_engine(),
     }
+}
+
+
+/// Whether Settings has the work on the processor: the studio's other models on the card follow that choice too.
+pub(crate) async fn processor_chosen(state: &AppState) -> bool {
+    state.engine_options.read().await.backend == music_engine::mm_server::ComputeBackend::Cpu
 }
 
 async fn engine_presets(State(state): State<AppState>) -> Json<Value> {
@@ -9933,6 +9973,22 @@ mod tests {
         assert_eq!(cut_short_seconds(&finished), None, "a song that reached its duration carries no mark");
         let older = serde_json::json!({ "truncated": false, "audio_codes": codes(500) });
         assert_eq!(cut_short_seconds(&older), None);
+    }
+
+
+    #[test]
+    fn an_engine_that_did_not_start_is_counted_by_a_reason_without_paths() {
+        let crashed = "the local engine did not start: mm-server exited during startup with status exit code: 0xc000001d; faulting module ggml-cpu-haswell.dll, exception 0xc000001d, offset 0x0000000000012345";
+        assert_eq!(engine_failure_code(crashed), "exited during startup 0xc000001d; faulting module ggml-cpu-haswell.dll, exception 0xc000001d, offset 0x0000000000012345");
+        let unrecorded = "the local engine did not start: mm-server exited during startup with status exit code: 0xc0000005";
+        assert_eq!(engine_failure_code(unrecorded), "exited during startup 0xc0000005");
+        let missing = "the local engine runtime was not found: C:\\Users\\someone\\MiniMax\\mm-server.exe is missing; reinstall the studio";
+        let code = engine_failure_code(missing);
+        assert_eq!(code, "engine runtime not found");
+        assert!(!code.contains("someone"), "no path reaches the hub: {code}");
+        let card = missing_chosen_card(Some(3), &[(0, "NVIDIA GeForce RTX 4090".into(), 24.0)]).expect("card 3 is not there");
+        assert_eq!(engine_failure_code(&card), "chosen card not present");
+        assert_eq!(engine_failure_code("something new"), "other");
     }
 
     #[test]

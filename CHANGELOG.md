@@ -20,6 +20,8 @@ Windows build.
 
 ### Fixed
 
+- **Describe by ear keeps to the processor when you chose it**, as in YuE2 Studio ([YuE2 Studio #204](https://github.com/timoncool/YuE2-Studio/issues/204)): with the processor chosen in Settings - Local engine the captioner still ran on the graphics card with its CUDA libraries; it now runs on the processor then, without them.
+- **A program of the studio that crashes without a word says where it crashed**, as in YuE2 Studio: when the engine fails to start, or the captioner or the trainer stops on an exit code such as 0xc0000005 or 0xc000001d, the studio reads Windows' record of the crash and adds the module it happened in, the exception and the offset to the error and the engine log - the file name only, never a path.
 - **A song whose last stretch is short no longer crashes the engine on NVIDIA cards**: with the older ggml the engine could stop with "CUDA error: an illegal memory access was encountered" while rendering the song's last, shorter window, and the song was lost; on ggml 0.29 the same song with the same seed is made.
 - **A failed song names the engine's own reason again when the engine log holds a character that is not UTF-8**: one such byte - a caption or a path in the system's code page - made the studio read the whole log as empty, and the song failed with "the engine failed this job and its log names no cause". The log is now read past such bytes, so the FATAL or ERROR line is shown.
 
