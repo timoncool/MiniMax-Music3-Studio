@@ -9,6 +9,10 @@ Windows build.
 
 - **The interface can be scaled**, as in YuE2 Studio ([YuE2 Studio #165](https://github.com/timoncool/YuE2-Studio/issues/165)): Settings - Appearance - Interface scale draws the whole studio from 90 to 150 % and keeps it for the next start; Ctrl + plus and Ctrl + minus, or Ctrl with the mouse wheel, change it too, and Ctrl + 0 returns to 100 %. The Winamp mode gives the chosen scale back when it closes.
 
+### Fixed
+
+- **A failed song names the engine's own reason again when the engine log holds a character that is not UTF-8**: one such byte - a caption or a path in the system's code page - made the studio read the whole log as empty, and the song failed with "the engine failed this job and its log names no cause". The log is now read past such bytes, so the FATAL or ERROR line is shown.
+
 ## 2026-11-06 — 3.8.5
 
 ### Fixed
