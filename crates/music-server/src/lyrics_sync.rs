@@ -1315,75 +1315,6 @@ fn similarity(expected: &str, heard: &str) -> f64 {
     previous[right.len()] as f64 / left.len() as f64
 }
 
-/// Turns timed segments into an LRC body. Used by the providers that return
-/// structured timings rather than a file.
-pub fn lrc_from_segments(segments: &[(f64, String)]) -> String {
-    let mut out = String::new();
-    for (start, text) in segments {
-        let text = text.trim();
-        if text.is_empty() {
-            continue;
-        }
-        let total = start.max(0.0);
-        let minutes = (total as u64) / 60;
-        let seconds = (total as u64) % 60;
-        let hundredths = ((total - total.floor()) * 100.0).round() as u64;
-        out.push_str(&format!("[{minutes:02}:{seconds:02}.{hundredths:02}]{text}\n"));
-    }
-    out
-}
-
-/// The opening lines of the lyrics, as a decoding hint. Whisper's prompt is
-/// bounded, and the first lines are enough to tell it this is singing, in this
-/// language, about these words.
-fn prompt_from(lyrics: &str) -> String {
-    let mut prompt = String::new();
-    for line in lyrics.lines().map(str::trim).filter(|line| !line.is_empty() && !(line.starts_with('[') && line.ends_with(']'))) {
-        if prompt.chars().count() + line.chars().count() > 400 {
-            break;
-        }
-        if !prompt.is_empty() {
-            prompt.push(' ');
-        }
-        prompt.push_str(line);
-    }
-    prompt
-}
-
-/// Reads a whisper.cpp LRC back as a word stream.
-pub fn words_from_lrc(lrc: &str) -> Vec<(f64, String)> {
-    let mut words = Vec::new();
-    for line in lrc.lines() {
-        let Some(rest) = line.strip_prefix('[') else { continue };
-        let Some((stamp, text)) = rest.split_once(']') else { continue };
-        let Some((minutes, seconds)) = stamp.split_once(':') else { continue };
-        let (Ok(minutes), Ok(seconds)) = (minutes.trim().parse::<f64>(), seconds.trim().parse::<f64>()) else {
-            continue;
-        };
-        let text = text.trim();
-        if !text.is_empty() {
-            words.push((minutes * 60.0 + seconds, text.to_string()));
-        }
-    }
-    words
-}
-
-/// The timestamps in an LRC body, in seconds. Also the emptiness check: a file
-/// with no timestamps is not karaoke, however much text it contains.
-pub fn parse_lrc_times(lrc: &str) -> Vec<f64> {
-    let mut times = Vec::new();
-    for line in lrc.lines() {
-        let Some(rest) = line.strip_prefix('[') else { continue };
-        let Some((stamp, _)) = rest.split_once(']') else { continue };
-        let Some((minutes, seconds)) = stamp.split_once(':') else { continue };
-        let (Ok(minutes), Ok(seconds)) = (minutes.trim().parse::<f64>(), seconds.trim().parse::<f64>()) else {
-            continue;
-        };
-        times.push(minutes * 60.0 + seconds);
-    }
-    times
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1425,18 +1356,6 @@ mod tests {
             segments: vec![span("[Music]", 12.0, 12.0), span(" Тьма во мне", 12.5, 41.0)],
         };
         assert_eq!(heard_words(&instant).len(), 3, "a filler of no length takes no later word");
-    }
-
-    #[test]
-    fn segments_become_a_playable_lrc_body() {
-        let lrc = lrc_from_segments(&[
-            (0.0, "neon on the glass".into()),
-            (12.5, "driving home".into()),
-            (75.25, "  ".into()),
-            (81.5, "the engine dies".into()),
-        ]);
-        assert_eq!(lrc, "[00:00.00]neon on the glass\n[00:12.50]driving home\n[01:21.50]the engine dies\n");
-        assert_eq!(parse_lrc_times(&lrc), vec![0.0, 12.5, 81.5]);
     }
 
     /// A chorus sung twice, heard worse the first time, and one of its lines
@@ -1706,11 +1625,6 @@ Third");
         assert_eq!(lines[0].0, 0.0);
         assert!(lines[1].0 > 0.0 && lines[1].0 < 10.0, "the middle line got {}", lines[1].0);
         assert_eq!(lines[2].0, 10.0);
-    }
-
-    #[test]
-    fn text_without_timestamps_is_not_karaoke() {
-        assert!(parse_lrc_times("just some lyrics\nand another line").is_empty());
     }
 
     #[test]
