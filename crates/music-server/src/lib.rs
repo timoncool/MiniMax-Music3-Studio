@@ -669,8 +669,8 @@ impl<'de> Deserialize<'de> for KeepLoaded {
 }
 
 /// The card's room a start weighs for `Auto`, beside the set and the caches: what the DiT windows and the decoder take
-/// above the weights.
-const KEEP_RESERVE_GIB: f64 = 6.0;
+/// above the weights, about 1.1 GiB on a 30-second song, with room to spare.
+const KEEP_RESERVE_GIB: f64 = 2.0;
 
 /// Bytes of the language model's KV cache per token: K and V in F16, 8 KV heads of 128 for each of its 36 layers.
 const LM_KV_BYTES_PER_TOKEN: f64 = 36.0 * 2.0 * 8.0 * 128.0 * 2.0;
