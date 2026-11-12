@@ -7696,6 +7696,7 @@ async fn finish_midi_run(state: &AppState, outcome: anyhow::Result<usize>, outpu
                 run.notes = notes;
                 run.file = Some(plain_path(output));
             }
+            Err(_) if stopped => run.stage = "stopped",
             Err(error) => run.error = Some(format!("{error:#}")),
         }
     }
@@ -7808,7 +7809,34 @@ async fn transcribe_to_midi(state: &AppState, size: &'static midi::Size, audio: 
     let files = state.midi.model_files(size);
     let background = state.clone();
     let result = tokio::task::spawn_blocking(move || -> anyhow::Result<Value> {
-        acpp::run(&acpp, build, acpp_server::ModelEntry::muscriptor(&id, &model), files, serde_json::json!({ "audio": input }), &|| midi_stopped(&background))
+        // the notes and the chunks as the server streams them; the file and the count come from the answer
+        let mut live = midi::Events::default();
+        let mut shown = std::time::Instant::now().checked_sub(std::time::Duration::from_secs(1)).unwrap_or_else(std::time::Instant::now);
+        let mut on_event = |artifacts: &[acpp_server::TaskArtifact]| {
+            let mut chunks = None;
+            // the notes and the progress come as MuScriptor's event JSON; the stream's other artifacts are the result's
+            for artifact in artifacts.iter().filter(|artifact| artifact.meta.get("format").and_then(Value::as_str) == Some("muscriptor-event-json")) {
+                match live.take_streamed(&artifact.payload) {
+                    Ok(Some(progress)) => chunks = Some(progress),
+                    Ok(None) => {}
+                    Err(error) => studio_log!("[ERROR] MuScriptor's streamed {} ({}, {} bytes): {error}", artifact.id, artifact.kind, artifact.payload.len()),
+                }
+            }
+            if let Some(run) = background.midi_run.blocking_write().as_mut() {
+                run.notes = live.notes.len();
+                if let Some((done, total)) = chunks {
+                    run.chunks_done = u32::try_from(done).unwrap_or(u32::MAX);
+                    run.chunks_total = u32::try_from(total).unwrap_or(u32::MAX);
+                }
+            }
+            // copying every note on every event of a long track would be thousands of copies; the window reads a few
+            // times a second
+            if shown.elapsed() >= std::time::Duration::from_millis(200) {
+                *background.midi_notes.blocking_write() = live.notes.clone();
+                shown = std::time::Instant::now();
+            }
+        };
+        acpp::run_stream(&acpp, build, acpp_server::ModelEntry::muscriptor(&id, &model), files, serde_json::json!({ "audio": input }), &|| midi_stopped(&background), &mut on_event)
     })
     .await
     .context("the transcriber stopped")?;

@@ -1618,6 +1618,7 @@ export const ja = {
     midiStart: 'MIDIを作成',
     midiAgain: 'MIDIを作り直す',
     midiStop: '停止',
+    midiStopped: '停止しました。聞き取った音符は保存されていません。「MIDI を作成」でやり直せます。',
     midiForSelected: 'MIDIへ',
     midiBatchStarted: '{count} 曲を順番に MIDI にします。進み具合はツールに表示されます',
     midiBatchProgress: 'MIDI: {total} 曲中 {done} 曲',
