@@ -1225,7 +1225,6 @@ export const en = {
     problemSend: 'Send',
     problemOpenGithub: 'Open the form on GitHub',
     problemSent: 'Message #{n} created:',
-    problemAuthorNews: 'News from the author:',
     problemKind: 'Kind of message',
     problemKind_bug: 'Bug',
     problemKind_idea: 'Idea',

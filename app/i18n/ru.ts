@@ -1224,7 +1224,6 @@ export const ru = {
     problemSend: 'Отправить',
     problemOpenGithub: 'Открыть форму на GitHub',
     problemSent: 'Сообщение № {n} создано:',
-    problemAuthorNews: 'Новости автора:',
     problemKind: 'Вид сообщения',
     problemKind_bug: 'Ошибка',
     problemKind_idea: 'Идея',
