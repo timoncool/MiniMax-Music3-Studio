@@ -272,7 +272,7 @@ ${steps}
 ${s.speed.rows.map((row) => `        <tr>${row.map((cell) => `<td>${escape(cell)}</td>`).join('')}</tr>`).join('\n')}
       </tbody>
     </table></div>
-    <p class="note">${escape(s.speed.ours)}</p>
+    <p class="sub">${escape(s.speed.ours)}</p>
   </section>
 
   <section id="faq">
