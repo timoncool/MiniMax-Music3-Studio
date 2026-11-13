@@ -19,7 +19,8 @@ git -C "$worktree" submodule update --init --recursive
 
 cmake --fresh -S "$worktree" -B "$worktree/build" -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON -DCMAKE_INSTALL_RPATH=@executable_path \
-    -DGGML_NATIVE=OFF -DGGML_CUDA_NCCL=OFF -DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON
+    -DGGML_NATIVE=OFF -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod+fp16 -DGGML_CUDA_NCCL=OFF -DGGML_METAL=ON \
+    -DGGML_METAL_EMBED_LIBRARY=ON
 cmake --build "$worktree/build" --config Release --target mm-server \
     -j "$(getconf _NPROCESSORS_ONLN)"
 

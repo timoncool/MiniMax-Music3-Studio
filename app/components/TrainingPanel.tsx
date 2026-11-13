@@ -3,6 +3,7 @@ import { karaokeStatusChanged, useSystemResources } from '../services/studioQuer
 import { AlertTriangle, BookOpen, Check, CheckSquare, ChevronDown, Clock, ChevronLeft, ChevronRight, Cpu, Download, FolderInput, FolderOpen, FolderOutput, Headphones, Library, Loader2, Mic2, MoreHorizontal, Music, Play, Plus, RotateCcw, Search, Square, Trash2, UploadCloud, Wand2, X } from 'lucide-react';
 import { useI18n } from '../context/I18nContext';
 import { AUDIO_ACCEPT } from '../services/audioFiles';
+import { karaokeReason } from '../services/karaoke';
 import { poll } from '../services/poll';
 import { ConfirmDialog } from './ConfirmDialog';
 import { StemPlayer } from './StemPlayer';
@@ -208,7 +209,7 @@ const PackCard: React.FC<{ state: TrainingState; onError: (message: string) => v
       <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">{t('trainingSetupNeeds').replace('{size}', gigabytes(total)).replace('{vram}', String(state.min_vram_gb))}</p>
       {!state.card_trains && (
         <p role="note" className="mt-2 text-sm text-amber-700 dark:text-amber-300">
-          {state.card_needs === 'driver' ? t('trainingNeedsDriver').replace('{driver}', String(state.trainer_driver ?? '')) : t('trainingNeedsNvidia')}
+          {state.card_needs === 'driver' ? t('trainingNeedsDriver').replace('{driver}', String(state.trainer_driver ?? '')) : state.card_needs === 'platform' ? t('trainingNeedsWindows') : t('trainingNeedsNvidia')}
         </p>
       )}
       <ul className="mt-3 space-y-1.5">
@@ -368,7 +369,7 @@ function songState(item: DatasetItem, job: PrepareStatus | null, datasetId: stri
   if (mine && !mine.finished && mine.pending.includes(item.id)) {
     return { kind: 'queued', text: t('trainingQueued') };
   }
-  if (failure) return { kind: 'failed', text: failure.error };
+  if (failure) return { kind: 'failed', text: karaokeReason(t, failure.error) ?? failure.error };
   const lacks = [
     item.lyrics_state === 'wanted' ? t('trainingLacksLyrics') : '',
     item.lyrics_state === 'found' ? t('trainingLacksSections') : '',

@@ -4,6 +4,7 @@ import { libraryChanged, SELF_READ, setupStatusChanged, useActivity, useAssistan
 import { karaokeReason } from '../services/karaoke';
 import { clampDurationToKept } from '../services/createDuration';
 import { AlertTriangle, ChevronDown, CircleAlert, Dices, FolderOpen, Loader2, RotateCcw, Save, Sparkles, Square, Tags, Trash2, Wand2, Settings2, X } from 'lucide-react';
+import { foldedAfter, keepFolded, keptFolded } from '../services/createFold';
 import type { Music3Request, Playlist, Song } from '../types';
 import { useI18n } from '../context/I18nContext';
 import { saveFile } from '../services/saveFile';
@@ -90,7 +91,7 @@ const keptDuration = (): string => {
 /** The duration to show when a request is loaded (a reused track, an example,
  *  the writing assistant): the max-duration the user keeps for every new song is
  *  not dropped below by a loaded (often short) request, but a longer one is
- *  honoured (#184). With no kept maximum, the request's own value stands. */
+ *  honoured. With no kept maximum, the request's own value stands. */
 const loadedDuration = (asked: unknown): string => {
   const value = typeof asked === 'number' ? asked : Number(asked);
   const capped = Number.isFinite(value) ? Math.min(MAX_DURATION_SECONDS, value) : undefined;
@@ -144,6 +145,10 @@ const PROFILE_LABEL: Record<string, string> = {
 const CONTROL =
   'w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 outline-hidden transition-colors focus:border-pink-500 disabled:opacity-50 dark:border-white/10 dark:bg-black/25 dark:text-white';
 const CARD = 'rounded-xl border border-zinc-200 bg-white p-4 dark:border-white/5 dark:bg-suno-card';
+/** The section tags MiniMax Music 3 reads, each on a line of its own (the lyrics hint names the same). */
+const SECTION_TAGS = ['[intro]', '[verse]', '[pre-chorus]', '[chorus]', '[post-chorus]', '[bridge]', '[instrumental]', '[solo]', '[outro]'];
+const CHIP =
+  'rounded-md border border-zinc-200 px-2 py-0.5 font-mono text-[10px] text-zinc-500 transition-colors hover:border-pink-400 hover:text-pink-600 dark:border-white/10 dark:text-zinc-400';
 const LABEL = 'mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400';
 const TOOL =
   'inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[11px] font-semibold text-zinc-600 transition-colors hover:border-pink-400 hover:text-pink-600 dark:border-white/10 dark:text-zinc-300';
@@ -245,19 +250,43 @@ const Stage: React.FC<{ title: string; hint: string; children: React.ReactNode }
   </section>
 );
 
-/** A card with a titled header strip, the way the panels are built elsewhere. */
-const Card: React.FC<{ title: string; actions?: React.ReactNode; children: React.ReactNode }> = ({ title, actions, children }) => (
-  <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-white/5 dark:bg-suno-card">
-    <div className="flex items-center justify-between gap-2 border-b border-zinc-100 bg-zinc-50 px-3 py-2 dark:border-white/5 dark:bg-white/5">
-      <span className="text-[11px] font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{title}</span>
-      {actions && <div className="flex items-center gap-1">{actions}</div>}
+/** A card with a titled header strip; with `fold` its title folds and opens it, and the choice is kept across restarts. */
+const Card: React.FC<{ title: string; actions?: React.ReactNode; fold?: string; children: React.ReactNode }> = ({ title, actions, fold, children }) => {
+  const [folded, setFolded] = useState(() => (fold ? keptFolded().includes(fold) : false));
+  // React keeps a block's state when the simple mode's block in the same place turns into a studio one
+  useEffect(() => setFolded(fold ? keptFolded().includes(fold) : false), [fold]);
+  const toggle = () => {
+    if (!fold) return;
+    setFolded(current => {
+      keepFolded(foldedAfter(keptFolded(), fold, !current));
+      return !current;
+    });
+  };
+  return (
+    <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-white/5 dark:bg-suno-card">
+      <div className={`flex items-center justify-between gap-2 bg-zinc-50 px-3 py-2 dark:bg-white/5 ${folded ? '' : 'border-b border-zinc-100 dark:border-white/5'}`}>
+        {fold ? (
+          <button
+            type="button"
+            onClick={toggle}
+            aria-expanded={!folded}
+            className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-[11px] font-bold uppercase tracking-wide text-zinc-500 transition-colors hover:text-black dark:text-zinc-400 dark:hover:text-white"
+          >
+            <ChevronDown size={14} className={folded ? '-rotate-90 transition-transform' : 'transition-transform'} />
+            {title}
+          </button>
+        ) : (
+          <span className="text-[11px] font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{title}</span>
+        )}
+        {actions && <div className="flex items-center gap-1">{actions}</div>}
+      </div>
+      {!folded && <div className="p-3">{children}</div>}
     </div>
-    <div className="p-3">{children}</div>
-  </div>
-);
+  );
+};
 
 /** Grows with its content: these sections run to a thousand characters. */
-const AutoTextarea: React.FC<React.TextareaHTMLAttributes<HTMLTextAreaElement> & { minRows?: number }> = ({ minRows = 3, value, ...rest }) => {
+const AutoTextarea: React.FC<React.TextareaHTMLAttributes<HTMLTextAreaElement> & { minRows?: number; boxRef?: React.MutableRefObject<HTMLTextAreaElement | null> }> = ({ minRows = 3, value, boxRef, ...rest }) => {
   const node = useRef<HTMLTextAreaElement | null>(null);
   useEffect(() => {
     const element = node.current;
@@ -265,7 +294,7 @@ const AutoTextarea: React.FC<React.TextareaHTMLAttributes<HTMLTextAreaElement> &
     element.style.height = 'auto';
     element.style.height = `${Math.max(element.scrollHeight, minRows * 20)}px`;
   }, [value, minRows]);
-  return <textarea ref={node} value={value} rows={minRows} {...rest} />;
+  return <textarea ref={element => { node.current = element; if (boxRef) boxRef.current = element; }} value={value} rows={minRows} {...rest} />;
 };
 
 /** One labelled section of the structured caption. */
@@ -399,6 +428,21 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
     return () => window.cancelAnimationFrame(frame);
   }, [error]);
   const promptFile = useRef<HTMLInputElement | null>(null);
+  const lyricsBox = useRef<HTMLTextAreaElement | null>(null);
+  const insertTag = (tag: string) => {
+    const box = lyricsBox.current;
+    const at = box?.selectionStart ?? lyrics.length;
+    const before = lyrics.slice(0, at);
+    const after = lyrics.slice(at);
+    const prefix = before && !before.endsWith('\n\n') ? (before.endsWith('\n') ? '\n' : '\n\n') : '';
+    setLyrics(`${before}${prefix}${tag}\n${after}`);
+    // the caret follows the tag, so tags pressed in turn stay in that order
+    const caret = before.length + prefix.length + tag.length + 1;
+    window.requestAnimationFrame(() => {
+      box?.focus();
+      box?.setSelectionRange(caret, caret);
+    });
+  };
 
   const ready = setup?.ready === true && setup?.engine_ready === true;
   const defaults = catalog?.defaults ?? {};
@@ -431,8 +475,12 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
   }, [setup?.engine_ready]);
 
 
+  // Create is kept in a React Activity: showing it again reruns this effect with the same Reuse, which would put the
+  // song's request back over what was edited since; each Reuse is applied once, by its timestamp
+  const appliedReuse = useRef<number | null>(null);
   useEffect(() => {
-    if (!initialData?.song) return;
+    if (!initialData?.song || appliedReuse.current === initialData.timestamp) return;
+    appliedReuse.current = initialData.timestamp;
     const song = initialData.song;
     setName(song.title || '');
     const panes = splitCaption(song.style || '');
@@ -589,7 +637,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
         duration_seconds: numberOrUndefined(duration) ?? 60,
         instrumental,
         // the studio's UI language, so an autogen that leaves the lyrics'
-        // language open falls back to it instead of Russian (#198)
+        // language open falls back to it instead of Russian
         locale: language,
       });
 
@@ -956,6 +1004,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
 
           <Card
             title={t('captionStructured')}
+            fold="song"
             actions={
               <>
                 <button type="button" onClick={() => (assistantReady ? void askAssistant('prompt') : openAssistantSetup())} disabled={assistantReady && (assisting !== null)} className={ICON} title={assistantReady ? t('writeCaption') : t('setUpAssistant')}>
@@ -994,6 +1043,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
 
           <Card
             title={t('lyrics')}
+            fold="lyrics"
             actions={
               <>
                 <span
@@ -1012,7 +1062,13 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
               </>
             }
           >
+            <div className="mb-2 flex flex-wrap gap-1">
+              {SECTION_TAGS.map(tag => (
+                <button key={tag} type="button" onClick={() => insertTag(tag)} className={CHIP}>{tag}</button>
+              ))}
+            </div>
             <AutoTextarea
+              boxRef={lyricsBox}
               value={lyrics}
               minRows={10}
               onChange={event => setLyrics(event.target.value)}
@@ -1038,11 +1094,12 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({ onGenerate, isGenerati
             onChange={setAdapters}
             onTrigger={applyTrigger}
             iconClass={ICON}
-            frame={(title, _icon, actions, body) => <Card title={title} actions={actions}>{body}</Card>}
+            frame={(title, _icon, actions, body) => <Card title={title} actions={actions} fold="lora">{body}</Card>}
           />
 
           <Card
             title={t('quality')}
+            fold="quality"
             actions={
               <button type="button" onClick={resetParameters} className="rounded-md px-2 py-1 text-[10px] font-semibold text-zinc-500 transition-colors hover:bg-zinc-200 hover:text-black dark:hover:bg-white/10 dark:hover:text-white">
                 {t('resetToDefaults')}

@@ -52,6 +52,8 @@ export interface Song {
   timeSignature?: string;
   /** Native Music3 provenance is complete enough for POST /v1/music/replay. */
   nativeReplayAvailable?: boolean;
+  /** The language model's KV cache left the song less room than its duration asked for: how many seconds came out. */
+  cutShortSeconds?: number;
   /** Processed versions kept beside the original; the active one plays. */
   audioVersions?: SongVersion[];
   /** `original`, a version id, or absent for a track never processed. */
@@ -140,6 +142,9 @@ export interface NativeLibrarySong {
   audio_codes?: unknown | null;
   /** The library's list leaves the replay request and the semantic stream out and says only whether both are kept. */
   replay_available?: boolean;
+  /** The engine stopped the song where the language model's KV cache ran out, and the seconds it came out. */
+  cut_short?: 'memory';
+  cut_short_seconds?: number;
   created_at: string;
   updated_at?: string;
 }

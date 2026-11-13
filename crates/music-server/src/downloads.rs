@@ -78,7 +78,7 @@ pub const SET: &str = "set";
 pub struct DownloadProgress {
     pub asset_id: String,
     /// Which panel asked for this. The karaoke recogniser and the separator
-    /// share one downloader - they share the ONNX runtime and the CUDA
+    /// share one downloader - they share the audio.cpp server and its CUDA
     /// libraries on disk, so they must - and without this the separator's panel
     /// showed the recogniser's download as its own: its button disappeared and
     /// a percentage of somebody else's gigabytes appeared in its place.
@@ -146,7 +146,8 @@ impl Downloader {
     }
 
     /// Installed when its files are there and, for a runtime, its record names
-    /// today's pin (`install_record`); a runtime from before records counts as
+    /// today's pin (`install_record`), or its files are today's pin byte for byte
+    /// whichever address put them there; a runtime from before records counts as
     /// in `take_over`. A model counts by its file: its address can move to
     /// another revision of the same weights without them being fetched again.
     pub fn is_installed(&self, asset: &Asset) -> bool {
@@ -158,9 +159,44 @@ impl Downloader {
         }
         let record = self.record_of(asset);
         match crate::install_record::matches(&record, asset.url, &self.root) {
-            Some(current) => current,
-            None => self.take_over(asset, &record),
+            Some(true) => true,
+            Some(false) => self.holds_pinned_bytes(asset, &record),
+            None => self.take_over(asset, &record) || self.holds_pinned_bytes(asset, &record),
         }
+    }
+
+    /// Today's pin already on disk byte for byte, from whichever address: the files a pick takes out of its
+    /// package by the hashes the package lists, or a single file by the pin's own. Its record is then written for
+    /// today's pin, so the next look reads the record.
+    fn holds_pinned_bytes(&self, asset: &Asset, record: &Path) -> bool {
+        if crate::install_record::under_way(record) {
+            return false;
+        }
+        let files: Vec<PathBuf> = if !asset.pick.is_empty() {
+            let destination = self.picked_into(asset);
+            let mut files = Vec::new();
+            for entry in asset.pick {
+                let name = picked_file_name(entry);
+                let path = destination.join(name);
+                match crate::pin_sha::picked(asset.url, name) {
+                    Some(sha256) if crate::pin_sha::holds(&path, sha256) => files.push(path),
+                    _ => return false,
+                }
+            }
+            files
+        } else if asset.unzip_into.is_none() {
+            let path = self.path_of(asset);
+            match crate::pin_sha::sha256(asset.url) {
+                Some(sha256) if crate::pin_sha::holds(&path, sha256) => vec![path],
+                _ => return false,
+            }
+        } else {
+            return false;
+        };
+        if let Err(error) = crate::install_record::write(record, asset.url, "", &files, &self.root) {
+            studio_log!("[ERROR] {}: the record of today's files already on disk was not written: {error:#}", asset.label);
+        }
+        true
     }
 
     /// What an earlier release left of `asset` for today's pin to replace: `Some(Some(url))` when its record names
@@ -438,6 +474,16 @@ impl Downloader {
     /// Stops the running download.
     pub fn cancel(&self) {
         self.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Stops the running download only when the panel of `scope` started it: a downloader two panels share (karaoke's
+    /// carries audio.cpp's server for the stems and Audio to MIDI too) keeps the other panel's download going.
+    pub async fn cancel_for(&self, scope: &str) -> bool {
+        let ours = self.active_for(scope).await.is_some_and(|progress| !progress.done);
+        if ours {
+            self.cancel();
+        }
+        ours
     }
 
     /// The running download, but only if this panel started it.
@@ -1187,6 +1233,36 @@ fn link_beside(link: &Path, target: &str) -> Result<()> {
     Ok(())
 }
 
+/// The cause of a failed download as one code for the hub's counters (CONTRACT, Counters: one cause, one row):
+/// disk_space, io, hash_mismatch, size_mismatch, rate_limited, http_status, network, proxy, extract or other. The
+/// detail stays in the window and the log; it names hosts and sizes and would split one cause into many rows.
+pub fn failure_code(error: &anyhow::Error) -> &'static str {
+    for cause in error.chain() {
+        if let Some(io) = cause.downcast_ref::<io::Error>() {
+            // 112 is Windows' ERROR_DISK_FULL, 28 is ENOSPC
+            return if io.kind() == io::ErrorKind::StorageFull || matches!(io.raw_os_error(), Some(112) | Some(28)) { "disk_space" } else { "io" };
+        }
+    }
+    let text = format!("{error:#}");
+    if text.contains("differs from the pinned") {
+        "hash_mismatch"
+    } else if text.contains("bytes, the server said") {
+        "size_mismatch"
+    } else if text.contains(" minutes") && text.contains(" answered ") {
+        "rate_limited"
+    } else if text.contains("proxy") {
+        "proxy"
+    } else if text.contains("could not connect to") || text.contains("could not start") || text.contains("failed after") {
+        "network"
+    } else if text.contains(" answered ") {
+        "http_status"
+    } else if text.contains("did not contain") || text.contains("to files it does not contain") || text.contains("extraction") {
+        "extract"
+    } else {
+        "other"
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1257,7 +1333,7 @@ mod tests {
     fn an_install_cut_off_before_its_record_is_not_installed() {
         let root = std::env::temp_dir().join(format!("downloads-{}", uuid::Uuid::now_v7()));
         let downloader = Downloader::new(root.clone());
-        let url = "https://github.com/microsoft/onnxruntime/releases/download/v1.30.0/onnxruntime-win-x64-1.30.0.zip";
+        let url = "https://github.com/microsoft/onnxruntime/releases/download/v1.31.1/onnxruntime-win-x64-1.31.1.zip";
         let runtime = Asset { id: "test-runtime", kind: AssetKind::Runtime, url, relative_path: "runtime/onnxruntime.zip", unzip_into: Some("onnx"), marker: "onnxruntime.dll", ..asset() };
         let (key, size) = crate::install_record::key_file(url).unwrap();
         let record = downloader.record_of(&runtime);
@@ -1290,7 +1366,7 @@ mod tests {
         let runtime = Asset {
             id: "test-llama",
             kind: AssetKind::Runtime,
-            url: "https://github.com/ggml-org/llama.cpp/releases/download/b11900/llama-b11900-bin-win-cuda-13.4-x64.zip",
+            url: "https://github.com/ggml-org/llama.cpp/releases/download/b12248/llama-b12248-bin-win-cuda-13.5-x64.zip",
             relative_path: "runtime/llama.zip",
             unzip_into: Some("cuda"),
             marker: "ggml-cuda",
@@ -1587,5 +1663,21 @@ mod tests {
         assert!(!downloader.runtime_dir("cuda").join("libfoo.so.1.2.3").exists());
         assert!(!downloader.is_installed(&runtime));
         fs::remove_dir_all(&root).ok();
+    }
+
+    /// A failed download reaches the hub as one code for its cause, never the text that names a host or a size.
+    #[test]
+    fn a_failed_download_is_one_code_for_its_cause() {
+        let code = |error: anyhow::Error| failure_code(&error);
+        assert_eq!(code(anyhow::Error::new(io::Error::from_raw_os_error(112)).context("write the part")), "disk_space");
+        assert_eq!(code(anyhow::Error::new(io::Error::new(io::ErrorKind::PermissionDenied, "denied"))), "io");
+        assert_eq!(code(anyhow::anyhow!("model.gguf: its SHA-256 ab differs from the pinned cd; the file is removed, download it again")), "hash_mismatch");
+        assert_eq!(code(anyhow::anyhow!("Model has 10 bytes, the server said 20")), "size_mismatch");
+        assert_eq!(code(anyhow::anyhow!("https://h/x answered 429 Too Many Requests for 5 minutes")), "rate_limited");
+        assert_eq!(code(anyhow::anyhow!("could not connect to huggingface.co (3 attempts) for https://huggingface.co/x: timed out")), "network");
+        assert_eq!(code(anyhow::anyhow!("range 0-9 failed after 8 attempts: reset")), "network");
+        assert_eq!(code(anyhow::anyhow!("https://h/x answered 404 Not Found")), "http_status");
+        assert_eq!(code(anyhow::anyhow!("a.zip did not contain b.dll")), "extract");
+        assert_eq!(code(anyhow::anyhow!("something new")), "other");
     }
 }

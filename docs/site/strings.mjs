@@ -230,6 +230,20 @@ export const STRINGS = {
     "modelsGpu": "Your GPU",
     "modelsSize": "Download",
     "modelsNote": "The studio detects your card and preselects the profile it can actually run, but the download is always your decision. Every file is checksum-verified against a pinned Hugging Face revision, and an interrupted download resumes where it stopped.",
+    "speed": {
+      "title": "How fast is it",
+      "sub": "How long a 3-minute song takes, by graphics card (averages from MiniMax Music3 Studio installations over 30 days, version 3.8, loading the models included). MiniMax Music 3 is the heaviest of the three models.",
+      "head": ["Your graphics card", "A 3-minute song", "Speed"],
+      "rows": [
+        ["NVIDIA, 24 GB or more", "about 7 minutes", "0.45× of real time"],
+        ["NVIDIA, 16 GB", "about 8 minutes", "0.4×"],
+        ["NVIDIA, 12 GB", "about 15 minutes", "0.2×"],
+        ["Apple silicon, 24 GB or more", "about 30 minutes", "0.1×"],
+        ["NVIDIA, 8 GB or less", "about 45 minutes", "0.07×"],
+        ["No graphics card (processor)", "about 2.5 hours", "0.02×"]
+      ],
+      "ours": "On our machine (RTX 4090, the Q8_0 set): a 30-second song in 33 s; with the models kept loaded the second song takes 28 s."
+    },
     "startTitle": "Getting started",
     "steps": [
       [
@@ -543,6 +557,20 @@ export const STRINGS = {
     "modelsGpu": "Видеокарта",
     "modelsSize": "Загрузка",
     "modelsNote": "Студия определяет карту и заранее выбирает профиль, который на ней реально пойдёт, но скачивание — всегда ваше решение. Каждый файл сверяется по контрольной сумме с зафиксированной ревизией на Hugging Face, а прерванная загрузка продолжается с места остановки.",
+    "speed": {
+      "title": "Как быстро",
+      "sub": "Сколько делается песня на 3 минуты на разных видеокартах (средние по установкам MiniMax Music3 Studio за 30 дней, версия 3.8, вместе с загрузкой моделей). MiniMax Music 3 — самая тяжёлая из трёх моделей.",
+      "head": ["Ваша видеокарта", "Песня на 3 минуты", "Скорость"],
+      "rows": [
+        ["NVIDIA, 24 ГБ и больше", "около 7 минут", "0,45× реального времени"],
+        ["NVIDIA, 16 ГБ", "около 8 минут", "0,4×"],
+        ["NVIDIA, 12 ГБ", "около 15 минут", "0,2×"],
+        ["Apple silicon, 24 ГБ и больше", "около 30 минут", "0,1×"],
+        ["NVIDIA, 8 ГБ и меньше", "около 45 минут", "0,07×"],
+        ["Без видеокарты (процессор)", "около 2,5 часа", "0,02×"]
+      ],
+      "ours": "На нашей машине (RTX 4090, набор Q8_0): песня на 30 секунд — за 33 с; с моделями, оставленными в памяти, вторая песня — за 28 с."
+    },
     "startTitle": "С чего начать",
     "steps": [
       [
@@ -856,6 +884,20 @@ export const STRINGS = {
     "modelsGpu": "显卡",
     "modelsSize": "下载量",
     "modelsNote": "工作室会识别你的显卡并预选它真正跑得动的配置，但是否下载始终由你决定。每个文件都按固定的 Hugging Face 版本校验哈希，中断的下载会从断点继续。",
+    "speed": {
+      "title": "有多快",
+      "sub": "不同显卡生成一首 3 分钟歌曲所需的时间（MiniMax Music3 Studio 各安装 30 天内的平均值，版本 3.8，包含加载模型）。MiniMax Music 3 是三个模型中最重的。",
+      "head": ["你的显卡", "一首 3 分钟的歌", "速度"],
+      "rows": [
+        ["NVIDIA，24 GB 及以上", "约 7 分钟", "实时的 0.45×"],
+        ["NVIDIA，16 GB", "约 8 分钟", "0.4×"],
+        ["NVIDIA，12 GB", "约 15 分钟", "0.2×"],
+        ["Apple silicon，24 GB 及以上", "约 30 分钟", "0.1×"],
+        ["NVIDIA，8 GB 及以下", "约 45 分钟", "0.07×"],
+        ["无显卡（处理器）", "约 2.5 小时", "0.02×"]
+      ],
+      "ours": "在我们的机器上（RTX 4090，Q8_0 套装）：30 秒的歌 33 秒生成；模型保持加载时，第二首 28 秒。"
+    },
     "startTitle": "快速开始",
     "steps": [
       [
@@ -1169,6 +1211,20 @@ export const STRINGS = {
     "modelsGpu": "GPU",
     "modelsSize": "ダウンロード",
     "modelsNote": "スタジオはカードを検出し、実際に動くプロファイルをあらかじめ選びますが、ダウンロードするかどうかは常にあなたの判断です。各ファイルは固定した Hugging Face のリビジョンとハッシュ照合され、中断したダウンロードは途中から再開します。",
+    "speed": {
+      "title": "どのくらい速いか",
+      "sub": "3 分の曲にかかる時間をグラフィックカード別に（MiniMax Music3 Studio のインストールの 30 日間の平均、バージョン 3.8、モデルの読み込みを含む）。MiniMax Music 3 は三つのモデルの中でいちばん重いモデルです。",
+      "head": ["お使いのグラフィックカード", "3 分の曲", "速さ"],
+      "rows": [
+        ["NVIDIA、24 GB 以上", "約 7 分", "実時間の 0.45×"],
+        ["NVIDIA、16 GB", "約 8 分", "0.4×"],
+        ["NVIDIA、12 GB", "約 15 分", "0.2×"],
+        ["Apple silicon、24 GB 以上", "約 30 分", "0.1×"],
+        ["NVIDIA、8 GB 以下", "約 45 分", "0.07×"],
+        ["グラフィックカードなし（プロセッサー）", "約 2.5 時間", "0.02×"]
+      ],
+      "ours": "私たちのマシン（RTX 4090、Q8_0 セット）では、30 秒の曲が 33 秒。モデルを読み込んだままなら 2 曲目は 28 秒です。"
+    },
     "startTitle": "はじめかた",
     "steps": [
       [
@@ -1482,6 +1538,20 @@ export const STRINGS = {
     "modelsGpu": "그래픽 카드",
     "modelsSize": "내려받기",
     "modelsNote": "스튜디오가 카드를 확인해 실제로 돌아가는 프로필을 미리 골라 주지만, 내려받을지는 언제나 사용자가 정합니다. 모든 파일은 고정된 Hugging Face 리비전과 체크섬으로 대조되고, 끊긴 다운로드는 멈춘 지점부터 이어집니다.",
+    "speed": {
+      "title": "얼마나 빠른가",
+      "sub": "3분짜리 곡에 걸리는 시간을 그래픽 카드별로 보여 줍니다(MiniMax Music3 Studio 설치본의 30일 평균, 버전 3.8, 모델 불러오기 포함). MiniMax Music 3는 세 모델 중 가장 무겁습니다.",
+      "head": ["내 그래픽 카드", "3분짜리 곡", "속도"],
+      "rows": [
+        ["NVIDIA, 24 GB 이상", "약 7분", "실시간의 0.45×"],
+        ["NVIDIA, 16 GB", "약 8분", "0.4×"],
+        ["NVIDIA, 12 GB", "약 15분", "0.2×"],
+        ["Apple silicon, 24 GB 이상", "약 30분", "0.1×"],
+        ["NVIDIA, 8 GB 이하", "약 45분", "0.07×"],
+        ["그래픽 카드 없음(프로세서)", "약 2.5시간", "0.02×"]
+      ],
+      "ours": "우리 컴퓨터(RTX 4090, Q8_0 세트)에서는 30초짜리 곡이 33초, 모델을 불러온 채로 두면 두 번째 곡은 28초입니다."
+    },
     "startTitle": "시작하기",
     "steps": [
       [

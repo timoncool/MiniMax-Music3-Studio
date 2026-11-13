@@ -384,11 +384,12 @@ impl MmServerLaunchConfig {
     pub fn cuda_backend(&self) -> Result<Option<PathBuf>> {
         let Some(folder) = self.options.cuda_folder else { return Ok(None) };
         let directory = self.executable.parent().context("the engine executable has no folder")?;
-        let backend = directory.join(folder).join("ggml-cuda.dll");
+        let library = if cfg!(windows) { "ggml-cuda.dll" } else { "libggml-cuda.so" };
+        let backend = directory.join(folder).join(library);
         if backend.is_file() {
             return Ok(Some(backend));
         }
-        if directory.join("ggml-cuda.dll").is_file() {
+        if directory.join(library).is_file() {
             return Ok(None);
         }
         bail!("the engine's CUDA backend {} is missing; reinstall the studio", backend.display())
@@ -631,7 +632,15 @@ impl MmServerSupervisor {
             }
             if let Some(child) = self.child.as_mut() {
                 if let Some(status) = child.try_wait().context("inspect starting mm-server")? {
-                    bail!("mm-server exited during startup with status {status}");
+                    // a crash says nothing of where: Windows' record of it names the module
+                    let fault = music_core::process::exited_on_exception(status.code()).then(|| music_core::process::fault_of(child.id(), Duration::from_secs(5))).flatten();
+                    match fault {
+                        Some(fault) => {
+                            note_in_log(&format!("the engine crashed during startup: {fault}"));
+                            bail!("mm-server exited during startup with status {status}; {fault}");
+                        }
+                        None => bail!("mm-server exited during startup with status {status}"),
+                    }
                 }
             }
             if Instant::now() >= deadline {
@@ -901,6 +910,19 @@ mod tests {
     fn health_check_is_false_without_a_server() {
         assert!(!health_check("127.0.0.1", 65534, Duration::from_millis(10)));
     }
+
+    #[test]
+    fn a_log_with_a_broken_utf8_byte_still_gives_its_last_lines() {
+        let root = fresh_directory("log-tail");
+        unsafe { std::env::set_var("MINIMAX_STUDIO_DATA_ROOT", &root) };
+        let mut log = b"[Server] Job 1 created (1 requests)\n[Prompt] caption \xd0\n".to_vec();
+        log.extend_from_slice(b"[AR] FATAL: the prompt takes 10300 tokens, the LM KV cache holds 10240 (--max-seq)\n");
+        fs::write(root.join("engine-startup.log"), log).unwrap();
+        let tail = startup_log_tail(2);
+        assert_eq!(tail.len(), 2, "{tail:?}");
+        assert!(tail[1].contains("FATAL: the prompt takes 10300"), "{tail:?}");
+        let _ = fs::remove_dir_all(&root);
+    }
 }
 
 /// Where the engine's startup output is kept: beside the studio's data, so the
@@ -941,9 +963,10 @@ pub fn startup_log_path() -> PathBuf {
 
 /// The tail of that file, oldest first.
 pub fn startup_log_tail(lines: usize) -> Vec<String> {
-    let Ok(text) = std::fs::read_to_string(startup_log_path()) else {
+    let Ok(bytes) = std::fs::read(startup_log_path()) else {
         return Vec::new();
     };
+    let text = String::from_utf8_lossy(&bytes);
     let all: Vec<&str> = text.lines().filter(|line| !line.trim().is_empty()).collect();
     all.iter().rev().take(lines).rev().map(|line| (*line).to_string()).collect()
 }

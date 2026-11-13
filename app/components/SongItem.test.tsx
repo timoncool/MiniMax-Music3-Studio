@@ -1,0 +1,95 @@
+import React, { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { Song } from '../types';
+
+const queries = new QueryClient();
+
+vi.mock('../context/I18nContext', () => ({ useI18n: () => ({ language: 'en', t: (key: string) => key }) }));
+vi.mock('../context/AuthContext', () => ({ useAuth: () => ({ user: null }) }));
+
+const { SongItem, CancelAllButton } = await import('./SongList');
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+let root: Root;
+let host: HTMLDivElement;
+
+beforeEach(() => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 404 })));
+  host = document.createElement('div');
+  document.body.append(host);
+  root = createRoot(host);
+});
+
+afterEach(() => {
+  act(() => root.unmount());
+  host.remove();
+  vi.unstubAllGlobals();
+});
+
+const song = { id: 's1', title: 'Neon nights', style: 'synth-pop', lyrics: '', tags: [], duration: '1:00', audioUrl: '/a.flac', createdAt: new Date(0) } as unknown as Song;
+
+function item(isCurrent: boolean, isPlaying: boolean, onPlay: () => void) {
+  const noop = () => undefined;
+  return (
+    <QueryClientProvider client={queries}>
+      <SongItem song={song} isCurrent={isCurrent} isSelected={false} isSelectionMode={false} isChecked={false} isLiked={false}
+        isPlaying={isPlaying} isOwner={false} onPlay={onPlay} onSelect={noop} onToggleSelect={noop} onToggleLike={noop} onAddToPlaylist={noop} />
+    </QueryClientProvider>
+  );
+}
+
+describe('the play control of a song row (YuE2 Studio #171)', () => {
+  it('is a button named by the song, pressed while it plays, that starts the song from the keyboard', () => {
+    const onPlay = vi.fn();
+    act(() => root.render(item(false, false, onPlay)));
+    const button = host.querySelector<HTMLButtonElement>('button[aria-label="play: Neon nights"]');
+    expect(button).not.toBeNull();
+    expect(button!.type).toBe('button');
+    expect(button!.getAttribute('aria-pressed')).toBe('false');
+    act(() => { button!.click(); });
+    expect(onPlay).toHaveBeenCalledTimes(1);
+
+    act(() => root.render(item(true, true, onPlay)));
+    const playing = host.querySelector<HTMLButtonElement>('button[aria-label="pause: Neon nights"]');
+    expect(playing?.getAttribute('aria-pressed')).toBe('true');
+  });
+});
+
+describe('a stopped card', () => {
+  it('offers to dismiss it, named by what it does, not as a reset of the card', () => {
+    const onResetJob = vi.fn();
+    const noop = () => undefined;
+    const stopped = { ...song, stage: 'cancelled', isGenerating: false } as unknown as Song;
+    act(() => root.render(
+      <QueryClientProvider client={queries}>
+        <SongItem song={stopped} isCurrent={false} isSelected={false} isSelectionMode={false} isChecked={false} isLiked={false}
+          isPlaying={false} isOwner={false} onPlay={noop} onSelect={noop} onToggleSelect={noop} onToggleLike={noop} onAddToPlaylist={noop}
+          onResetJob={onResetJob} />
+      </QueryClientProvider>,
+    ));
+    const buttons = [...host.querySelectorAll('button')];
+    expect(buttons.some(button => button.textContent === 'resetGeneration')).toBe(false);
+    const dismiss = buttons.find(button => button.textContent === 'dismissStopped');
+    expect(dismiss).toBeDefined();
+    act(() => { dismiss!.click(); });
+    expect(onResetJob).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the stop-all button over the list', () => {
+  it('stops every song, then offers to clear the stopped ones, named by what it does', () => {
+    const onCancelAll = vi.fn();
+    const onResetAll = vi.fn();
+    act(() => root.render(<CancelAllButton activeJobCount={2} onCancelAll={onCancelAll} onResetAll={onResetAll} />));
+    const button = host.querySelector('button')!;
+    expect(button.textContent).toBe('cancelAll (2)');
+    act(() => { button.click(); });
+    expect(onCancelAll).toHaveBeenCalledTimes(1);
+    expect(button.textContent).toBe('dismissAll (2)');
+    act(() => { button.click(); });
+    expect(onResetAll).toHaveBeenCalledTimes(1);
+    expect(button.textContent).toBe('cancelAll (2)');
+  });
+});

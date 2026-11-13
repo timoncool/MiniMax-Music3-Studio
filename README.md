@@ -86,9 +86,12 @@ Code, save [docs/mcp-skill.md](docs/mcp-skill.md) as `~/.claude/skills/minimax-m
 - **Split a finished track into six stems** — drums, bass, other, vocals, guitar and
   piano — with HT-Demucs on the GPU, or on the CPU when you prefer. The model is an
   optional download like everything else.
+- **Restore a track after compression** — Apollo removes the artefacts of MP3 compression
+  from a song or any audio file and gives 44.1 kHz in the source's channels, as a new track
+  beside it, in the audio.cpp server.
 - **Any track to MIDI** — a song, a stem or a processed take becomes multi-instrument MIDI
-  (34 instrument groups and drums) with MuScriptor on the GPU, through HOT-Step's native
-  port. A piano roll fills in while it listens; play it against the original, mute or solo
+  (34 instrument groups and drums) with MuScriptor on the GPU, in the audio.cpp server.
+  A piano roll fills in while it listens; play it against the original, mute or solo
   an instrument, save the .mid. Downloaded the first time it is used.
 - **Every result is a track** — stems, a processed take, a re-render and a cover land in
   the library as tracks of their own, each linked to the one it was made from and keeping
@@ -229,6 +232,23 @@ run them on a real Linux desktop. **If you live on Linux, it would be great if y
 the fixes back as a pull request.** The studio keeps its data in `~/.local/share/minimax-music3-studio`
 (`$XDG_DATA_HOME`).
 
+## How fast is it
+
+How long a 3-minute song takes, by graphics card (averages from MiniMax Music3 Studio installations over 30 days,
+version 3.8, loading the models included). MiniMax Music 3 is the heaviest of the three models.
+
+| Your graphics card | A 3-minute song | Speed |
+|---|---|---|
+| NVIDIA, 24 GB or more | about 7 minutes | 0.45× of real time |
+| NVIDIA, 16 GB | about 8 minutes | 0.4× |
+| NVIDIA, 12 GB | about 15 minutes | 0.2× |
+| Apple silicon, 24 GB or more | about 30 minutes | 0.1× |
+| NVIDIA, 8 GB or less | about 45 minutes | 0.07× |
+| No graphics card (processor) | about 2.5 hours | 0.02× |
+
+On our machine (RTX 4090, the Q8_0 set): a 30-second song in 33 s; with the models kept loaded the second song takes
+28 s.
+
 ## What runs where
 
 | Part | NVIDIA | AMD, Intel | No graphics card |
@@ -236,28 +256,29 @@ the fixes back as a pull request.** The studio keeps its data in `~/.local/share
 | Making songs · minimaxmusic.cpp | CUDA | Vulkan | processor |
 | Training a LoRA · music-train | CUDA | not available | not available |
 | Style by ear · MOSS-Music | CUDA | processor | processor |
-| Tempo and key · Beat This!, S-KEY | CUDA | DirectML | processor |
-| Stems · HT-Demucs | CUDA | processor | processor |
+| Tempo and key · Beat This!, S-KEY | processor | processor | processor |
+| Stems · HT-Demucs | CUDA | Vulkan | processor |
+| Stems · Mel-Band RoFormer | CUDA | Vulkan | processor |
+| Restore after compression · Apollo | CUDA | Vulkan | processor |
 | Karaoke timing · Parakeet | CUDA | Vulkan | processor |
 | Karaoke timing · CrisperWhisper | CUDA | Vulkan | processor |
 | Writing assistant · llama.cpp | CUDA | Vulkan | processor |
 | Audio to MIDI · MuScriptor | CUDA | processor | processor |
 
-**The paths for AMD and Intel cards (Vulkan, DirectML) and work on the processor are
+**The paths for AMD and Intel cards (Vulkan) and work on the processor are
 experimental:** they exist for computers where the studio would not run at all otherwise.
 The main, tested path is an NVIDIA card.
 
 - Training needs an NVIDIA card with 22 GB of video memory or more. The trainer has no other
   path, and on the processor one run would take days, so on any other machine the studio
   does not offer the training files.
-- On AMD and Intel cards stems are separated on the processor: the HT-Demucs model does not
-  run through DirectML (out of memory on a 2 GB integrated card, over 20 GB and minutes for
-  30 seconds of audio on a 24 GB one).
+- On AMD and Intel cards HT-Demucs separates the stems through Vulkan in the audio.cpp server and
+  Mel-Band RoFormer through its Vulkan build; MuScriptor (audio to MIDI) runs on the processor there.
 - Karaoke's Parakeet runs on transcribe.cpp, the engine Dub Studio and Speech Studio use: its
   CUDA build on an NVIDIA card with a CUDA 13 driver (on Linux when the system has CUDA 13's
   cuBLAS), its Vulkan build on any other card, its processor build without one; on a Mac, Metal
-  on Apple silicon and the processor on Intel. The tempo and key models reach any DirectX 12 card through
-  DirectML, whose runtime comes with karaoke's card path.
+  on Apple silicon and the processor on Intel. The tempo and key models run on the processor, in about 4.5
+  seconds a three-minute song.
 - "Auto" in a device choice takes the card when its runtime is installed, and the processor
   otherwise. The same table is in the studio, under Settings → Models.
 
@@ -423,6 +444,12 @@ the exact name in the listed folder is recognised and not downloaded again.
 
 MuScriptor by Kyutai & Mirelo, weights CC BY-NC 4.0 (non-commercial); the mirror carries the
 official files byte for byte, without the Hugging Face sign-in.
+
+**Restore after compression**
+
+| File | What for | Size | Put in the data folder |
+| --- | --- | --- | --- |
+| [`apollo-orig.gguf`](https://huggingface.co/audio-cpp/audio.cpp-gguf/resolve/73ce4162f6cce370dd533c6782b772135c1b2a8e/Apollo-GGUF/apollo-orig.gguf) | Apollo (JusperLee), weights CC BY-SA 4.0, in audio.cpp's server | 66 MB | `separation\models\apollo\` |
 
 **The writing assistant** — one of
 
@@ -593,6 +620,11 @@ statistics off entirely: no id exists and nothing is counted.
 | [ACE-Step Studio · Pinokio](https://github.com/timoncool/ACE-Step-Studio-pinokio) | One-click cross-platform launcher for ACE-Step Studio |
 | [telegram-api-mcp](https://github.com/timoncool/telegram-api-mcp) | Full Telegram Bot API as an MCP server |
 | [civitai-mcp-ultimate](https://github.com/timoncool/civitai-mcp-ultimate) | Civitai search, downloads and trend analysis over MCP |
+
+## Authors
+
+- **Nerual Dreming** — [Telegram](https://t.me/nerual_dreming) | [X](https://x.com/nerualdreming) | [neuro-cartel.com](https://neuro-cartel.com) | [ArtGeneration.me](https://artgeneration.me)
+- **Нейро-Софт** — [Telegram](https://t.me/neuroport) | portable neural networks
 
 ## Support the Author
 

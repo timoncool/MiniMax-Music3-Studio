@@ -12,11 +12,12 @@
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 
 use crate::engine_runtime::VC_RUNTIME_LIBRARIES;
 
-/// The DLLs a Windows binary names in its import table and its delay-load table.
+/// The DLLs a Windows binary names in its import table and its delay-load table, read by the PE reader Dub Studio,
+/// Speech Studio and the release checks share (`dub_core::compat`).
 ///
 /// NVIDIA's deployment guide says to read this with `dumpbin /IMPORTS` and redistribute exactly what it lists,
 /// because the binary compatibility version is part of the file name - `cublas64_13.dll`, not `cublas.dll`. A
@@ -24,83 +25,13 @@ use crate::engine_runtime::VC_RUNTIME_LIBRARIES;
 /// comes.
 pub fn imported_libraries(binary: &Path) -> Result<Vec<String>> {
     let data = std::fs::read(binary).with_context(|| format!("read {}", binary.display()))?;
-    let at = |offset: usize| -> Result<u32> {
-        let bytes = data.get(offset..offset + 4).context("truncated PE header")?;
-        Ok(u32::from_le_bytes(bytes.try_into().expect("four bytes")))
-    };
-    let short = |offset: usize| -> Result<u16> {
-        let bytes = data.get(offset..offset + 2).context("truncated PE header")?;
-        Ok(u16::from_le_bytes(bytes.try_into().expect("two bytes")))
-    };
-
-    let pe = at(0x3c)? as usize;
-    if data.get(pe..pe + 4) != Some(b"PE\0\0") {
-        bail!("{} is not a PE binary", binary.display());
-    }
-    let sections = short(pe + 6)? as usize;
-    let optional_size = short(pe + 20)? as usize;
-    let optional = pe + 24;
-    // 0x20b is PE32+, whose data directories start 16 bytes further in.
-    let directories = optional + if short(optional)? == 0x20b { 112 } else { 96 };
-
-    let headers: Vec<(u32, u32, u32)> = (0..sections)
-        .map(|index| {
-            let base = optional + optional_size + index * 40;
-            Ok((at(base + 12)?, at(base + 16)?, at(base + 20)?))
-        })
-        .collect::<Result<_>>()?;
-    let offset_of = |rva: u32| -> Option<usize> {
-        headers
-            .iter()
-            .find(|(virtual_address, size, _)| rva >= *virtual_address && rva < virtual_address + size)
-            .map(|(virtual_address, _, raw)| (raw + (rva - virtual_address)) as usize)
-    };
-
-    let mut names = Vec::new();
-    // (data directory, descriptor size, offset of the name's address in a descriptor): the import table is
-    // directory 1, the delay-load table directory 13.
-    for (directory, descriptor_size, name_field) in [(1usize, 20usize, 12usize), (13, 32, 4)] {
-        let table = at(directories + directory * 8)?;
-        if table == 0 {
-            continue;
-        }
-        let mut entry = offset_of(table).context("an import table points outside the file")?;
-        loop {
-            let descriptor = data.get(entry..entry + descriptor_size).context("truncated import table")?;
-            if descriptor.iter().all(|byte| *byte == 0) {
-                break;
-            }
-            let name_rva = u32::from_le_bytes(descriptor[name_field..name_field + 4].try_into().expect("four bytes"));
-            let start = offset_of(name_rva).context("an import name points outside the file")?;
-            let end = data[start..].iter().position(|byte| *byte == 0).context("unterminated import name")? + start;
-            names.push(String::from_utf8_lossy(&data[start..end]).into_owned());
-            entry += descriptor_size;
-        }
-    }
-    Ok(names)
+    dub_core::compat::pe_imports(binary, &data).map_err(|error| anyhow::anyhow!(error))
 }
 
-/// Libraries every Windows 10 and 11 machine has, or that arrive with the display driver. Everything else has to
-/// be shipped or downloaded.
+/// Libraries every Windows 10 and 11 machine has, or that arrive with the display driver (its CUDA library and the
+/// Vulkan loader), as the shared release checks name them. Everything else has to be shipped or downloaded.
 pub fn is_provided_by_the_system(name: &str) -> bool {
-    let name = name.to_ascii_lowercase();
-    name.starts_with("api-ms-win-")
-        || name.starts_with("ext-ms-win-")
-        // The display driver's own CUDA library: NVIDIA's guide is explicit that it is never redistributed.
-        || name == "nvcuda.dll"
-        // The Vulkan loader, which every Vulkan-capable display driver installs.
-        || name == "vulkan-1.dll"
-        || [
-            "kernel32.dll", "kernelbase.dll", "ntdll.dll", "bcryptprimitives.dll", "user32.dll", "gdi32.dll", "advapi32.dll", "shell32.dll",
-            "shlwapi.dll", "ole32.dll", "oleaut32.dll", "combase.dll", "ws2_32.dll", "crypt32.dll", "bcrypt.dll",
-            "ncrypt.dll", "secur32.dll", "rpcrt4.dll", "setupapi.dll", "cfgmgr32.dll", "version.dll", "dbghelp.dll",
-            "powrprof.dll", "psapi.dll", "userenv.dll", "winmm.dll", "msvcrt.dll", "comdlg32.dll", "comctl32.dll",
-            "imm32.dll", "iphlpapi.dll", "winhttp.dll", "wininet.dll", "dxgi.dll", "d3d11.dll", "d3d12.dll",
-            "dxcore.dll", "mfplat.dll", "mf.dll", "mfreadwrite.dll", "avrt.dll", "ksuser.dll", "dwmapi.dll",
-            "uxtheme.dll", "winspool.drv", "normaliz.dll", "wldap32.dll", "d2d1.dll", "dwrite.dll", "usp10.dll",
-            "shcore.dll", "propsys.dll", "wintrust.dll", "netapi32.dll", "mpr.dll", "opengl32.dll", "glu32.dll",
-        ]
-        .contains(&name.as_str())
+    dub_core::compat::windows_has(name)
 }
 
 /// A library of the Visual C++ runtime, by the names Microsoft's redistributable installs.
@@ -432,8 +363,8 @@ mod tests {
         let engine_libraries: Vec<PathBuf> = cublas13.iter().chain(cublas12.iter()).cloned().collect();
         loads.extend(bundle_loads(&resources, &engine_libraries));
 
-        let tools = Unit::of_downloader("HOT-Step tools", vec![crate::midi::tool_asset()], |root| {
-            vec![crate::midi::Transcriber::new(root).downloader().clone()]
+        let tools = Unit::of_downloader("HOT-Step tools", vec![&crate::training::pack()[0]], |root| {
+            vec![crate::training::Training::new(root, crate::PRIMARY_MUSIC_ENGINE_ID).downloader().clone()]
         });
         if let Some(folder) = found(&tools, &mut skipped) {
             let mut more = vec![engine_folder.clone()];
@@ -442,18 +373,30 @@ mod tests {
         }
 
         let separation = |root: &Path| vec![crate::separation::Separator::new(root).downloader().clone()];
-        let roformer = Unit::of_downloader("BSRoformer.cpp CUDA", vec![&crate::separation::ROFORMER_ENGINE], separation);
+        let roformer_build = |build| crate::separation::roformer_asset(build).expect("every BSRoformer.cpp build on Windows");
+        let roformer = Unit::of_downloader("BSRoformer.cpp CUDA", vec![roformer_build(crate::separation::RoformerBuild::Cuda13)], separation);
         if let Some(folder) = found(&roformer, &mut skipped) {
             // the studio links the engine's cuBLAS 13 beside it
             loads.extend(folder_loads(&folder, &cublas13.iter().cloned().collect::<Vec<_>>()));
         }
-        let roformer_cpu = Unit::of_downloader("BSRoformer.cpp processor", vec![&crate::separation::ROFORMER_ENGINE_CPU], separation);
+        let roformer12 = Unit::of_downloader("BSRoformer.cpp CUDA 12", vec![roformer_build(crate::separation::RoformerBuild::Cuda12)], separation);
+        if let Some(folder) = found(&roformer12, &mut skipped) {
+            // the studio links the engine's cuBLAS 12 and CUDA 12 runtime beside it
+            let mut more = vec![engine_folder.clone()];
+            more.extend(cublas12.iter().cloned());
+            loads.extend(folder_loads(&folder, &more));
+        }
+        let roformer_vulkan = Unit::of_downloader("BSRoformer.cpp Vulkan", vec![roformer_build(crate::separation::RoformerBuild::Vulkan)], separation);
+        if let Some(folder) = found(&roformer_vulkan, &mut skipped) {
+            loads.extend(folder_loads(&folder, &[]));
+        }
+        let roformer_cpu = Unit::of_downloader("BSRoformer.cpp processor", vec![roformer_build(crate::separation::RoformerBuild::Cpu)], separation);
         if let Some(folder) = found(&roformer_cpu, &mut skipped) {
             loads.extend(folder_loads(&folder, &[]));
         }
 
         let karaoke_asset = |id: &str| -> &'static crate::downloads::Asset {
-            crate::lyrics_sync::ASSETS
+            crate::lyrics_sync::assets()
                 .iter()
                 .find(|asset| asset.kind == AssetKind::Runtime && asset.id == id)
                 .unwrap_or_else(|| panic!("{id} is no longer a karaoke runtime"))
@@ -471,9 +414,9 @@ mod tests {
                 loads.extend(folder_loads(&folder, &more));
             }
         }
-        // ONNX Runtime is loaded into the studio's process after its folder joins PATH. Its CUDA build and NVIDIA
-        // libraries are left out: only HT-Demucs uses them, and it moves to audio.cpp.
-        for (name, ids) in [("ONNX Runtime", vec!["onnxruntime"]), ("ONNX Runtime DirectML", vec!["onnxruntime-directml", "directml"])] {
+        // ONNX Runtime is loaded into the studio's process after its folder joins PATH; only its processor build is
+        // downloaded.
+        for (name, ids) in [("ONNX Runtime", vec!["onnxruntime"])] {
             let unit = Unit::of_downloader(name, ids.into_iter().map(karaoke_asset).collect(), karaoke);
             if let Some(folder) = found(&unit, &mut skipped) {
                 let process = vec![folder.clone()];

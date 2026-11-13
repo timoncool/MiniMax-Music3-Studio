@@ -17,6 +17,7 @@ import { exactMoment, relativeMoment } from '../services/dates';
 import { compareBy, SONG_ORDERS, useListOrder, type SongOrder } from '../services/songOrder';
 import { onPlayHistory } from '../services/playHistory';
 import { downloadSongAudio } from '../services/songDownload';
+import { nameMatches, searchWords, songMatches } from '../services/songSearch';
 
 interface SongListProps {
     songs: Song[];
@@ -133,6 +134,34 @@ const createDragPreview = (element: HTMLElement) => {
 /** A generation's card rather than a song: being made, or stopped and waiting to be cleared. */
 const isCard = (song: Song) => Boolean(song.isGenerating) || song.stage === 'cancelled';
 
+/** Stops every running song; pressed again, stops them once more and clears the stopped ones from the list. */
+export const CancelAllButton: React.FC<{ activeJobCount: number; onCancelAll: () => void; onResetAll?: () => void }> = ({ activeJobCount, onCancelAll, onResetAll }) => {
+    const { t } = useI18n();
+    const [cancelStage, setCancelStage] = useState<'cancel' | 'reset'>('cancel');
+    useEffect(() => { if (activeJobCount === 0) setCancelStage('cancel'); }, [activeJobCount]);
+    return (
+        <button
+            onClick={() => {
+                if (cancelStage === 'cancel') {
+                    onCancelAll();
+                    setCancelStage('reset');
+                } else {
+                    onResetAll?.();
+                    setCancelStage('cancel');
+                }
+            }}
+            className={`border text-xs font-bold px-4 py-2.5 rounded-lg flex items-center gap-2 transition-all select-none ${
+                cancelStage === 'reset'
+                    ? 'bg-red-500/20 hover:bg-red-500/30 border-red-500/50 text-red-400 animate-pulse'
+                    : 'bg-red-500/10 hover:bg-red-500/20 border-red-500/30 text-red-500'
+            }`}
+        >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+            {cancelStage === 'reset' ? t('dismissAll') : t('cancelAll')} ({activeJobCount})
+        </button>
+    );
+};
+
 export const SongList: React.FC<SongListProps> = ({
     songs,
     currentSong,
@@ -184,9 +213,6 @@ export const SongList: React.FC<SongListProps> = ({
     const [activeFilters, setActiveFilters] = useState<Set<FilterType>>(new Set());
     const [isFilterOpen, setIsFilterOpen] = useState(false);
     const [isSelecting, setIsSelecting] = useState(false);
-    const [cancelStage, setCancelStage] = useState<'cancel' | 'reset'>('cancel');
-    // Reset cancel stage when no jobs left
-    useEffect(() => { if (activeJobCount === 0) setCancelStage('cancel'); }, [activeJobCount]);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const filterRef = useRef<HTMLDivElement>(null);
 
@@ -258,15 +284,12 @@ export const SongList: React.FC<SongListProps> = ({
         return next;
     });
 
+    const words = useMemo(() => searchWords(searchQuery), [searchQuery]);
+
     const filteredSongs = useMemo(() => {
         return songs.filter(song => {
             // 1. Search Logic
-            const matchesSearch =
-                song.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                song.style.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                song.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()));
-
-            if (!matchesSearch) return false;
+            if (!songMatches(song, words)) return false;
 
             // 2. Filter Logic
             if (activeFilters.size === 0) return true;
@@ -283,16 +306,16 @@ export const SongList: React.FC<SongListProps> = ({
 
             return true;
         });
-    }, [songs, searchQuery, activeFilters, likedSongIds]);
+    }, [songs, words, activeFilters, likedSongIds]);
 
     const filteredUploads = useMemo(() => {
         if (activeFilters.size > 0) return [];
         if (!referenceTracks.length) return [];
         return referenceTracks.filter(track => {
             const title = track.filename.replace(/\.[^/.]+$/, '');
-            return title.toLowerCase().includes(searchQuery.toLowerCase());
+            return nameMatches(title, words);
         });
-    }, [referenceTracks, searchQuery, activeFilters]);
+    }, [referenceTracks, words, activeFilters]);
 
     // The songs being made stay on top, newest first, and the newest finished
     // song sits right under them: a card that finishes becomes the song in its
@@ -548,25 +571,7 @@ export const SongList: React.FC<SongListProps> = ({
                         </button>
 
                         {activeJobCount > 0 && onCancelAll && (
-                            <button
-                                onClick={() => {
-                                    if (cancelStage === 'cancel') {
-                                        onCancelAll();
-                                        setCancelStage('reset');
-                                    } else {
-                                        onResetAll?.();
-                                        setCancelStage('cancel');
-                                    }
-                                }}
-                                className={`border text-xs font-bold px-4 py-2.5 rounded-lg flex items-center gap-2 transition-all select-none ${
-                                    cancelStage === 'reset'
-                                        ? 'bg-red-500/20 hover:bg-red-500/30 border-red-500/50 text-red-400 animate-pulse'
-                                        : 'bg-red-500/10 hover:bg-red-500/20 border-red-500/30 text-red-500'
-                                }`}
-                            >
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                                {cancelStage === 'reset' ? t('resetGeneration') : t('cancelAll')} ({activeJobCount})
-                            </button>
+                            <CancelAllButton activeJobCount={activeJobCount} onCancelAll={onCancelAll} onResetAll={onResetAll} />
                         )}
                     </div>
 
@@ -789,7 +794,7 @@ interface SongItemProps {
     nested?: boolean;
 }
 
-const SongItem: React.FC<SongItemProps> = ({
+export const SongItem: React.FC<SongItemProps> = ({
     song,
     isCurrent,
     isSelected,
@@ -943,8 +948,11 @@ const SongItem: React.FC<SongItemProps> = ({
                         )}
                     </div>
                 ) : (
-                    <div
-                        className={`absolute inset-0 bg-black/40 flex items-center justify-center backdrop-blur-[1px] cursor-pointer transition-opacity duration-200 ${isCurrent ? 'opacity-100' : 'opacity-0 group-hover/image:opacity-100'}`}
+                    <button
+                        type="button"
+                        aria-label={`${isCurrent && isPlaying ? t('pause') : t('play')}: ${song.title}`}
+                        aria-pressed={isCurrent && isPlaying}
+                        className={`absolute inset-0 bg-black/40 flex items-center justify-center backdrop-blur-[1px] cursor-pointer transition-opacity duration-200 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-500 ${isCurrent ? 'opacity-100' : 'opacity-0 group-hover/image:opacity-100'}`}
                         onClick={(e) => {
                             e.stopPropagation();
                             onPlay();
@@ -957,7 +965,7 @@ const SongItem: React.FC<SongItemProps> = ({
                                 <Play fill="black" className={`text-black ml-0.5 ${compact ? 'h-3.5 w-3.5' : 'h-5 w-5'}`} />
                             )}
                         </div>
-                    </div>
+                    </button>
                 )}
             </div>
 
@@ -1041,6 +1049,11 @@ const SongItem: React.FC<SongItemProps> = ({
                     <div className={`flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400 ${compact ? 'hidden' : 'h-5'}`}>
                         <span>{song.ditModel === 'imported-audio' ? t('importedAudio') : 'MiniMax Music 3'}</span>
                         {song.nativeReplayAvailable && <span title={t('replayAvailable')} className="rounded-sm bg-zinc-200/70 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide dark:bg-white/10">replay</span>}
+                        {song.cutShortSeconds != null && (
+                            <span title={t('cutShortMemory').replace('{s}', String(song.cutShortSeconds))} className="rounded-sm bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-800 dark:bg-amber-400/15 dark:text-amber-200">
+                                {t('cutShort')}
+                            </span>
+                        )}
                     </div>
                     <p className={`text-xs text-zinc-500 dark:text-zinc-500 font-medium max-w-2xl ${compact ? 'truncate' : 'line-clamp-2 pt-1'}`}>
                         {captionSummary(song.style)}
@@ -1186,7 +1199,7 @@ const SongItem: React.FC<SongItemProps> = ({
                             onClick={(e) => { e.stopPropagation(); onResetJob(); }}
                             className="text-[10px] text-red-400 hover:text-red-300 transition-colors font-sans animate-pulse font-bold"
                         >
-                            {t('resetGeneration')}
+                            {t('dismissStopped')}
                         </button>
                     </div>
                 ) : (

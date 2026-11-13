@@ -121,7 +121,7 @@ pub struct AssistRequest {
     pub instrumental: bool,
     /// The language the lyrics fall back to when the request does not settle
     /// one: the text language the user chose, or the studio's UI locale under
-    /// "Automatic". Without it a small model defaults to Russian (#198).
+    /// "Automatic". Without it a small model defaults to Russian.
     #[serde(default)]
     pub locale: String,
 }
@@ -199,6 +199,46 @@ pub fn instructions(request: &AssistRequest) -> (String, &'static [&'static str]
             &["lyrics", "global_metadata", "vocal_details", "arrangement"],
         ),
     }
+}
+
+/// The person's own rules for the assistant, one text per task it is asked.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct OwnRules {
+    /// The whole song: the idea, the style and the lyrics together.
+    pub song: Option<String>,
+    /// The style (the caption and the metadata).
+    pub style: Option<String>,
+    /// The lyrics.
+    pub lyrics: Option<String>,
+}
+
+/// The system prompt with the person's own rules for this task and the words
+/// they keep out after the studio's guide, which they come before. Laying out
+/// a transcript or a lyric sheet keeps its words as they are, so takes neither.
+pub fn with_own_rules(system: String, target: AssistTarget, rules: &OwnRules, avoid_words: Option<&str>) -> String {
+    let own = match target {
+        AssistTarget::All => rules.song.as_deref(),
+        AssistTarget::Prompt => rules.style.as_deref(),
+        AssistTarget::Lyrics => rules.lyrics.as_deref(),
+        AssistTarget::Transcript | AssistTarget::Sheet => return system,
+    }
+    .map(str::trim)
+    .filter(|own| !own.is_empty());
+    let avoid: Vec<&str> = avoid_words
+        .unwrap_or_default()
+        .split(['\n', ',', ';'])
+        .map(str::trim)
+        .filter(|word| !word.is_empty())
+        .collect();
+    let mut prompt = system;
+    if let Some(own) = own {
+        prompt.push_str(&format!("\n\nTHE USER'S OWN RULES (they come before the guide above where the two differ):\n{own}"));
+    }
+    if !avoid.is_empty() {
+        prompt.push_str(&format!("\n\nNEVER WRITE THESE WORDS OR PHRASES, nor their forms: {}.", avoid.join(", ")));
+    }
+    prompt
 }
 
 /// The rules that only apply to some songs.
@@ -551,7 +591,7 @@ pub fn content_of(response: &Value) -> Result<String> {
 /// blocks, an unclosed one to the end, and - when the chat template opened
 /// the block itself and the model reasoned in plain text - everything before
 /// the last closing tag, which otherwise ended up in a song's style. As
-/// HOT-Step's stripThinkingBlocks (its #189).
+/// HOT-Step's stripThinkingBlocks.
 fn without_thinking(text: &str) -> String {
     use std::sync::LazyLock;
     static BLOCKS: LazyLock<regex::Regex> = LazyLock::new(|| {
@@ -1044,6 +1084,18 @@ mod tests {
     }
 
     #[test]
+    fn the_users_rules_for_the_task_and_the_words_to_avoid_come_last() {
+        let rules = OwnRules { song: Some("Write about the sea.".into()), style: None, lyrics: Some("  First person, past tense.  ".into()) };
+        let (system, _) = instructions(&request(AssistTarget::Lyrics));
+        let prompt = with_own_rules(system.clone(), AssistTarget::Lyrics, &rules, Some("neon\ncity lights, echo"));
+        assert!(prompt.starts_with(&system));
+        assert!(prompt.contains("THE USER'S OWN RULES") && prompt.contains("First person, past tense.") && !prompt.contains("Write about the sea."));
+        assert!(prompt.ends_with("NEVER WRITE THESE WORDS OR PHRASES, nor their forms: neon, city lights, echo."));
+        assert_eq!(with_own_rules(system.clone(), AssistTarget::Prompt, &rules, None), system, "no rules for the style, no words: the prompt as it was");
+        assert_eq!(with_own_rules(system.clone(), AssistTarget::Sheet, &rules, Some("neon")), system, "laying out keeps the words");
+    }
+
+    #[test]
     fn a_prompt_edit_starts_from_the_prompt_the_user_wrote() {
         let message = user_message(&request(AssistTarget::Prompt));
         assert!(message.contains("Basic Attributes: bpm is 110."));
@@ -1164,7 +1216,7 @@ neon on the wet road"));
         assert_eq!(locale_language(""), None);
         assert_eq!(locale_language("xx"), None);
 
-        // a Chinese studio's autogen falls back to Chinese, not Russian (#198)
+        // a Chinese studio's autogen falls back to Chinese, not Russian
         let mut chinese = request(AssistTarget::All);
         chinese.locale = "zh".into();
         let (system, _) = instructions(&chinese);
