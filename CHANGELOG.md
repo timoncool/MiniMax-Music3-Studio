@@ -3,6 +3,12 @@
 What changed, newest first. Dates are release dates; the studio is versioned by its
 Windows build.
 
+## 2026-11-16 — 4.0.2
+
+### Fixed
+
+- **A download started again after its unfinished file was removed arrives whole**: the notes of how far a download had come stayed beside a removed file, the next download of the same file trusted them, skipped those bytes and ended with "its SHA-256 differs from the pinned". Removing a model, a tool or an assistant model now takes its notes away, a download trusts them only beside the file they were written for, and an unfinished download shows the bytes that arrived, not the size reserved for the whole file.
+
 ## 2026-11-15 — 4.0.1
 
 ### Fixed
