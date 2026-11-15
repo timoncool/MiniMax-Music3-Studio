@@ -303,7 +303,7 @@ impl Downloader {
 
 
     pub fn partial_bytes(&self, asset: &Asset) -> u64 {
-        fs::metadata(self.path_of(asset).with_extension("part")).map(|meta| meta.len()).unwrap_or(0)
+        crate::chunked::on_disk(&self.path_of(asset).with_extension("part"))
     }
 
     /// What the assets still need on the disk: the bytes their partial files do
@@ -462,7 +462,9 @@ impl Downloader {
             freed += drop_file(self.path_of(asset))?;
         }
 
-        freed += drop_file(self.path_of(asset).with_extension("part"))?;
+        let part = self.path_of(asset).with_extension("part");
+        freed += drop_file(crate::chunked::manifest_path(&part))?;
+        freed += drop_file(part)?;
         drop_file(self.record_of(asset))?;
         Ok(freed)
     }
