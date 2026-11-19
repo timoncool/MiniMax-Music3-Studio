@@ -12,15 +12,15 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 20
     env:
-      VERSION: "4.0.2"
+      VERSION: "4.0.3"
       APP: "MiniMax Music3 Studio"
-      DMG: "MiniMax-Music3-Studio-4.0.2-macos-arm64.dmg"
+      DMG: "MiniMax-Music3-Studio-4.0.3-macos-arm64.dmg"
       PORT: "8765"
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: The dmg, mounted and copied out
         run: |
-          gh release download "v$VERSION" -R "$GITHUB_REPOSITORY" -p "$DMG" -D "$RUNNER_TEMP"
+          gh run download 44570973473 -R "$GITHUB_REPOSITORY" -n minimax-music3-studio-macos-arm64 -D "$RUNNER_TEMP"
           shasum -a 256 "$RUNNER_TEMP/$DMG"
           hdiutil attach -nobrowse -readonly -mountpoint /Volumes/studio "$RUNNER_TEMP/$DMG"
           ls /Volumes/studio
