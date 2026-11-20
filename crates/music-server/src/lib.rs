@@ -6307,7 +6307,8 @@ fn unresolved_legacy_cuda_choice(chosen: Option<&cuda_build::GpuChoice>, applied
 /// Points every CUDA process of the studio at the physical card chosen in
 /// Settings. Called by the desktop shell and standalone service before CUDA starts.
 pub fn apply_saved_gpu() {
-    let Some(chosen) = load_studio_settings(&studio_settings_path()).and_then(|settings| settings.engine_options.gpu) else { return };
+    let settings_path = studio_settings_path();
+    let Some(chosen) = load_studio_settings(&settings_path).and_then(|settings| settings.engine_options.gpu) else { return };
     let cards = match chosen {
         cuda_build::GpuChoice::LegacyIndex(_) => cuda_build::nvidia_cards(),
         cuda_build::GpuChoice::Uuid(_) => None,
@@ -6322,7 +6323,24 @@ pub fn apply_saved_gpu() {
     }
     if let cuda_build::GpuChoice::LegacyIndex(index) = chosen {
         let _ = APPLIED_LEGACY_GPU.set(index);
+        if let Err(error) = pin_legacy_gpu(&settings_path, index, uuid) {
+            music_engine::mm_server::note_in_log(&format!("Could not save the NVIDIA GPU UUID to the studio settings: {error}"));
+        }
     }
+}
+
+/// Replace the legacy index once so future changes to NVML enumeration cannot move the studio to a different card.
+fn pin_legacy_gpu(path: &Path, index: u32, uuid: &str) -> anyhow::Result<()> {
+    let mut settings: Value = serde_json::from_slice(&fs::read(path)?)?;
+    let Some(gpu) = settings.pointer_mut("/engine_options/gpu") else { return Ok(()) };
+    if gpu.as_u64() != Some(u64::from(index)) {
+        return Ok(());
+    }
+    *gpu = Value::String(uuid.into());
+    let mut temporary = tempfile::NamedTempFile::new_in(path.parent().filter(|parent| !parent.as_os_str().is_empty()).unwrap_or(Path::new(".")))?;
+    serde_json::to_writer_pretty(temporary.as_file_mut(), &settings)?;
+    temporary.persist(path)?;
+    Ok(())
 }
 
 /// The NVIDIA cards nvidia-smi lists, and which one the studio runs on.
@@ -10743,6 +10761,42 @@ mod tests {
         assert!(unresolved_legacy_cuda_choice(Some(&legacy), Some(1)).is_some());
         assert_eq!(unresolved_legacy_cuda_choice(Some(&legacy), Some(0)), None);
         assert_eq!(unresolved_legacy_cuda_choice(None, None), None);
+    }
+
+    #[test]
+    fn resolved_legacy_gpu_stays_pinned_after_nvml_reorders_cards() {
+        use cuda_build::GpuChoice;
+
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("studio-settings.json");
+        let settings = serde_json::json!({
+            "engine_options": {"gpu": 0, "future_flag": true},
+            "future_settings": {"keep": "value"}
+        });
+        fs::write(&path, serde_json::to_vec(&settings).unwrap()).unwrap();
+
+        let mut selected = test_nvidia_card();
+        let mut other = test_nvidia_card();
+        other.index = 1;
+        other.uuid = "GPU-00000000-0000-0000-0000-000000000002".into();
+        let legacy = GpuChoice::LegacyIndex(0);
+        let first_inventory = [selected.clone(), other.clone()];
+        let resolved = legacy.cuda_mask(Some(&first_inventory)).unwrap();
+        pin_legacy_gpu(&path, 0, resolved).unwrap();
+
+        selected.index = 1;
+        other.index = 0;
+        let reordered = [other, selected.clone()];
+        assert_ne!(legacy.cuda_mask(Some(&reordered)), Some(resolved));
+
+        let saved: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        let choice: GpuChoice = serde_json::from_value(saved["engine_options"]["gpu"].clone()).unwrap();
+        assert_eq!(choice.cuda_mask(Some(&reordered)), Some(resolved));
+        assert_eq!(saved["engine_options"]["future_flag"], true);
+        assert_eq!(saved["future_settings"], settings["future_settings"]);
+
+        pin_legacy_gpu(&path, 0, &reordered[0].uuid).unwrap();
+        assert_eq!(serde_json::from_slice::<Value>(&fs::read(&path).unwrap()).unwrap(), saved);
     }
 
     fn test_nvidia_card() -> cuda_build::NvidiaCard {
