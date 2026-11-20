@@ -83,7 +83,9 @@ const Toggle: React.FC<{ label: string; hint: string; checked: boolean; onChange
 
 export const EngineSettings: React.FC = () => {
   const { t } = useI18n();
-  const { data: setup } = useSetupStatus<{ hardware?: { onProcessor?: boolean } }>();
+  const { data: setup } = useSetupStatus<{ platform?: string; hardware?: { onProcessor?: boolean } }>();
+  const isMac = setup?.platform === 'macos';
+  const backends: ComputeBackend[] = isMac ? ['auto', 'cpu'] : ['auto', 'cuda', 'vulkan', 'cpu'];
   const [options, setOptions] = useState<EngineOptions>(DEFAULTS);
   // With two cards or more, or a chosen card no longer in the computer, which one the studio computes on
   const [cards, setCards] = useState<{ cards: { index: number; name: string; memory_gb: number }[] | null; running: number | null; chosen_missing: string | null } | null>(null);
@@ -212,7 +214,7 @@ export const EngineSettings: React.FC = () => {
       <div className="rounded-xl border border-zinc-200 p-3 dark:border-white/10">
         <span className="block text-sm font-medium text-zinc-800 dark:text-zinc-100">{t('computeBackendLabel')}</span>
         <div className="mt-2 grid grid-cols-2 gap-1 rounded-lg bg-zinc-100 p-1 sm:grid-cols-4 dark:bg-black/30" role="radiogroup" aria-label={t('computeBackendLabel')}>
-          {(['auto', 'cuda', 'vulkan', 'cpu'] as const).map(value => (
+          {backends.map(value => (
             <button
               key={value}
               type="button"
@@ -225,11 +227,11 @@ export const EngineSettings: React.FC = () => {
             </button>
           ))}
         </div>
-        <span className="mt-2 block text-xs leading-5 text-zinc-500 dark:text-zinc-400">{t(`computeBackendHint_${options.backend}`)}</span>
-        {setup?.hardware?.onProcessor && <span className="mt-2 block text-xs leading-5 text-amber-700 dark:text-amber-300">{t('songsOnProcessor')}</span>}
+        <span className="mt-2 block text-xs leading-5 text-zinc-500 dark:text-zinc-400">{t(isMac && options.backend !== 'cpu' ? 'computeBackendHint_mac' : `computeBackendHint_${options.backend}`)}</span>
+        {setup?.hardware?.onProcessor && <span className="mt-2 block text-xs leading-5 text-amber-700 dark:text-amber-300">{t(isMac ? 'songsOnProcessorMac' : 'songsOnProcessor')}</span>}
       </div>
 
-      {cards?.cards && (cards.cards.length > 1 || cards.chosen_missing != null || (options.gpu != null && !cards.cards.some(card => card.index === options.gpu))) && (
+      {!isMac && cards?.cards && (cards.cards.length > 1 || cards.chosen_missing != null || (options.gpu != null && !cards.cards.some(card => card.index === options.gpu))) && (
         <label className="block rounded-xl border border-zinc-200 p-3 dark:border-white/10">
           <span className="block text-sm font-medium text-zinc-800 dark:text-zinc-100">{t('gpuChoice')}</span>
           <select

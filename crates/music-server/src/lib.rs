@@ -6374,6 +6374,7 @@ async fn compose_setup_status(state: &AppState, manager_status: model_manager::M
             Value::Bool(state.music_server.health().await),
         );
         fields.insert("engine_id".into(), Value::String(PRIMARY_MUSIC_ENGINE_ID.into()));
+        fields.insert("platform".into(), Value::from(std::env::consts::OS));
         fields.insert("trash_days".into(), Value::from(TRASH_DAYS));
         // whether the files a person downloads by hand are better taken from the mirror, as the studio's are
         fields.insert("huggingface_mirror".into(), Value::Bool(net::current().huggingface_mirror));
