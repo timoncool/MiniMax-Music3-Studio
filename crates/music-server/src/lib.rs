@@ -6330,14 +6330,15 @@ pub fn apply_saved_gpu() {
 }
 
 /// Replace the legacy index once so future changes to NVML enumeration cannot move the studio to a different card.
-fn pin_legacy_gpu(path: &Path, index: u32, uuid: &str) -> anyhow::Result<()> {
+fn pin_legacy_gpu(path: &std::path::Path, index: u32, uuid: &str) -> anyhow::Result<()> {
     let mut settings: Value = serde_json::from_slice(&fs::read(path)?)?;
     let Some(gpu) = settings.pointer_mut("/engine_options/gpu") else { return Ok(()) };
     if gpu.as_u64() != Some(u64::from(index)) {
         return Ok(());
     }
     *gpu = Value::String(uuid.into());
-    let mut temporary = tempfile::NamedTempFile::new_in(path.parent().filter(|parent| !parent.as_os_str().is_empty()).unwrap_or(Path::new(".")))?;
+    let parent = path.parent().filter(|parent| !parent.as_os_str().is_empty());
+    let mut temporary = tempfile::NamedTempFile::new_in(parent.unwrap_or_else(|| std::path::Path::new(".")))?;
     serde_json::to_writer_pretty(temporary.as_file_mut(), &settings)?;
     temporary.persist(path)?;
     Ok(())
