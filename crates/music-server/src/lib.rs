@@ -611,9 +611,9 @@ struct EngineOptions {
     disable_flash_attention: bool,
     split_cfg_forwards: bool,
     clamp_fp16: bool,
-    /// The NVIDIA card, by its nvidia-smi index, that every CUDA process of
+    /// The NVIDIA card UUID, or an nvidia-smi index saved by an older version, that every CUDA process of
     /// the studio computes on. None: the first. Taken at the studio's start.
-    gpu: Option<u32>,
+    gpu: Option<cuda_build::GpuChoice>,
     /// Every other launch flag, as the line it was typed on. It reaches the
     /// engine last, so it can also override one of the flags above - and it
     /// restarts the engine like they do, because the engine reads it once at
@@ -5202,6 +5202,9 @@ async fn update_engine_options(
     Json(mut request): Json<EngineOptions>,
 ) -> Result<Json<Value>, (StatusCode, Json<ApiError>)> {
     request = request.migrated();
+    if matches!(request.gpu.as_ref(), Some(cuda_build::GpuChoice::Uuid(uuid)) if !cuda_build::valid_gpu_uuid(uuid)) {
+        return Err(api_error(StatusCode::BAD_REQUEST, "gpu must be an NVIDIA GPU UUID or an index".into()));
+    }
     if request.max_batch.is_some_and(|value| value == 0 || value > 8) {
         return Err(api_error(StatusCode::BAD_REQUEST, "max_batch must be between 1 and 8".into()));
     }
@@ -5408,7 +5411,7 @@ async fn start_engine_again(state: &AppState) -> Result<(), String> {
         return Err(cuda_build::UNSUPPORTED.into());
     }
     // nvidia-smi is a process of its own: asked off the async workers, and only for a chosen card
-    let chosen_card = options.gpu;
+    let chosen_card = options.gpu.as_ref();
     if chosen_card.is_some() {
         let cards = tokio::task::spawn_blocking(cuda_build::nvidia_cards)
             .await
@@ -5518,19 +5521,23 @@ fn device_name(device: music_engine::mm_server::ComputeBackend) -> &'static str 
 /// Why the engine cannot start on the card the settings name: a card that is not in this computer would leave CUDA
 /// with no device at all, and the engine would go to the processor without a word. Only nvidia-smi's own list says a
 /// card is gone: without an answer (`None`) the engine starts as it did before a card could be chosen.
-fn missing_chosen_card(chosen: Option<u32>, cards: Option<&[(u32, String, f64)]>) -> Option<String> {
-    let index = chosen?;
+fn missing_chosen_card(chosen: Option<&cuda_build::GpuChoice>, cards: Option<&[cuda_build::NvidiaCard]>) -> Option<String> {
+    let chosen = chosen?;
     let cards = cards?;
-    if cards.iter().any(|(number, ..)| *number == index) {
+    if chosen.card(cards).is_some() {
         return None;
     }
+    let identity = match chosen {
+        cuda_build::GpuChoice::LegacyIndex(index) => format!("number {index}"),
+        cuda_build::GpuChoice::Uuid(uuid) => uuid.clone(),
+    };
     let present = if cards.is_empty() {
         "nvidia-smi lists no NVIDIA card".to_string()
     } else {
-        format!("nvidia-smi lists {}", cards.iter().map(|(number, name, _)| format!("{number}: {name}")).collect::<Vec<_>>().join(", "))
+        format!("nvidia-smi lists {}", cards.iter().map(|card| format!("{}: {}", card.index, card.name)).collect::<Vec<_>>().join(", "))
     };
     Some(format!(
-        "the graphics card chosen in Settings - Local engine (number {index}) is not in this computer ({present}); choose another card or Auto there"
+        "the graphics card chosen in Settings - Local engine ({identity}) is not in this computer ({present}); choose another card or Auto there"
     ))
 }
 
@@ -6274,39 +6281,54 @@ pub fn studio_data_root() -> Option<PathBuf> {
     None
 }
 
-/// Points every CUDA process of the studio - the engine, the trainer, the
-/// assistant, the captioner and the audio.cpp server - at the card
-/// chosen in the engine settings, numbered as nvidia-smi numbers them. Called
-/// by the desktop shell and the standalone service before anything starts.
-/// A chosen card that is not in the computer is not pointed at: CUDA would see no card at all, and the engine start
-/// says why (`missing_chosen_card`).
+/// Points every CUDA process of the studio at the physical card chosen in
+/// Settings. Called by the desktop shell and standalone service before CUDA starts.
 pub fn apply_saved_gpu() {
-    let Some(index) = load_studio_settings(&studio_settings_path()).and_then(|settings| settings.engine_options.gpu) else { return };
-    if missing_chosen_card(Some(index), cuda_build::nvidia_cards().as_deref()).is_some() {
-        return;
-    }
+    let Some(chosen) = load_studio_settings(&studio_settings_path()).and_then(|settings| settings.engine_options.gpu) else { return };
+    let cards = cuda_build::nvidia_cards();
+    let Some(uuid) = chosen.cuda_mask(cards.as_deref()) else { return };
     // SAFETY: called first thing in the process, before the service and its
     // runtimes read the environment; on Windows the variables are set through
     // SetEnvironmentVariableW, which is thread safe.
     unsafe {
         env::set_var("CUDA_DEVICE_ORDER", "PCI_BUS_ID");
-        env::set_var("CUDA_VISIBLE_DEVICES", index.to_string());
+        env::set_var("CUDA_VISIBLE_DEVICES", uuid);
     }
 }
 
 /// The NVIDIA cards nvidia-smi lists, and which one the studio runs on.
 async fn system_gpus(State(state): State<AppState>) -> Json<Value> {
-    let answer = tokio::task::spawn_blocking(cuda_build::nvidia_cards).await.unwrap_or_default();
-    let chosen = state.engine_options.read().await.gpu;
-    let running = env::var("CUDA_VISIBLE_DEVICES").ok().and_then(|value| value.trim().parse::<u32>().ok());
-    Json(serde_json::json!({
-        // null: nvidia-smi did not answer, so no card can be told apart
-        "cards": answer.as_ref().map(|cards| cards.iter().map(|(index, name, gigabytes)| serde_json::json!({ "index": index, "name": name, "memory_gb": gigabytes })).collect::<Vec<_>>()),
-        "chosen": chosen,
-        "running": running,
-        // the chosen card is not in the computer: why the engine does not start until another is chosen
-        "chosen_missing": missing_chosen_card(chosen, answer.as_deref()),
-    }))
+    let cards = tokio::task::spawn_blocking(cuda_build::nvidia_cards).await.unwrap_or_default();
+    let chosen = state.engine_options.read().await.gpu.clone();
+    let running = cuda_build::cuda_visible_device()
+        .map(|device| device.parse::<u32>().map_or(cuda_build::GpuChoice::Uuid(device), cuda_build::GpuChoice::LegacyIndex));
+    Json(system_gpu_status(cards.as_deref(), chosen.as_ref(), running.as_ref()))
+}
+
+fn system_gpu_status(
+    cards: Option<&[cuda_build::NvidiaCard]>,
+    chosen: Option<&cuda_build::GpuChoice>,
+    running: Option<&cuda_build::GpuChoice>,
+) -> Value {
+    use cuda_build::GpuChoice;
+
+    let index = |choice: Option<&GpuChoice>| match choice? {
+        GpuChoice::LegacyIndex(index) => Some(*index),
+        choice @ GpuChoice::Uuid(_) => choice.card(cards?).map(|card| card.index),
+    };
+    let uuid = |choice: Option<&GpuChoice>| match choice? {
+        GpuChoice::Uuid(uuid) => Some(uuid.clone()),
+        choice @ GpuChoice::LegacyIndex(_) => choice.card(cards?).map(|card| card.uuid.clone()),
+    };
+
+    serde_json::json!({
+        "cards": cards,
+        "chosen": index(chosen),
+        "running": index(running),
+        "chosen_uuid": uuid(chosen),
+        "running_uuid": uuid(running),
+        "chosen_missing": missing_chosen_card(chosen, cards),
+    })
 }
 
 /// The saved proxy, for the desktop shell to hand the window's browser before
@@ -6380,9 +6402,9 @@ async fn compose_setup_status(state: &AppState, manager_status: model_manager::M
         fields.insert("huggingface_mirror".into(), Value::Bool(net::current().huggingface_mirror));
         // what the running engine computes on, so a run on the processor is seen in the window
         fields.insert("engine_device".into(), serde_json::to_value(*state.active_device.read().await).unwrap_or(Value::Null));
-        let chosen_card = state.engine_options.read().await.gpu;
+        let chosen_card = state.engine_options.read().await.gpu.clone();
         let problem = match chosen_card {
-            Some(_) => tokio::task::spawn_blocking(move || missing_chosen_card(chosen_card, cuda_build::nvidia_cards().as_deref()))
+            Some(_) => tokio::task::spawn_blocking(move || missing_chosen_card(chosen_card.as_ref(), cuda_build::nvidia_cards().as_deref()))
             .await
             .unwrap_or_else(|error| Some(format!("the graphics card chosen in Settings - Local engine was not looked for: {error}"))),
             None => None,
@@ -10667,14 +10689,31 @@ mod tests {
     }
 
     #[test]
+    fn gpu_status_preserves_numeric_fields_and_adds_uuid() {
+        let cards = [test_nvidia_card()];
+        let legacy = cuda_build::GpuChoice::LegacyIndex(0);
+        let explicit = cuda_build::GpuChoice::Uuid(cards[0].uuid.clone());
+        let body = system_gpu_status(Some(&cards), Some(&legacy), Some(&explicit));
+        assert_eq!(body["chosen"], 0);
+        assert_eq!(body["running"], 0);
+        assert_eq!(body["cards"][0]["uuid"], cards[0].uuid);
+        assert_eq!(body["chosen_uuid"], cards[0].uuid);
+        assert_eq!(body["running_uuid"], cards[0].uuid);
+    }
+
+    fn test_nvidia_card() -> cuda_build::NvidiaCard {
+        cuda_build::NvidiaCard { index: 0, uuid: "GPU-00000000-0000-0000-0000-000000000001".into(), name: "NVIDIA GeForce RTX 4090".into(), memory_gb: 24.0 }
+    }
+
+    #[test]
     fn a_chosen_card_that_is_not_there_is_said_not_left_to_the_processor() {
-        let cards = vec![(0, "NVIDIA GeForce RTX 4090".to_string(), 24.0)];
+        let cards = vec![test_nvidia_card()];
         assert_eq!(missing_chosen_card(None, Some(&cards)), None);
-        assert_eq!(missing_chosen_card(Some(0), Some(&cards)), None);
-        let missing = missing_chosen_card(Some(1), Some(&cards)).expect("card 1 is not there");
+        assert_eq!(missing_chosen_card(Some(&cuda_build::GpuChoice::LegacyIndex(0)), Some(&cards)), None);
+        let missing = missing_chosen_card(Some(&cuda_build::GpuChoice::LegacyIndex(1)), Some(&cards)).expect("card 1 is not there");
         assert!(missing.contains("number 1") && missing.contains("0: NVIDIA GeForce RTX 4090"), "{missing}");
-        assert!(missing_chosen_card(Some(0), Some(&[])).expect("no card at all").contains("lists no NVIDIA card"));
-        assert_eq!(missing_chosen_card(Some(7), None), None, "nvidia-smi did not answer: the card is not called gone");
+        assert!(missing_chosen_card(Some(&cuda_build::GpuChoice::LegacyIndex(0)), Some(&[])).expect("no card at all").contains("lists no NVIDIA card"));
+        assert_eq!(missing_chosen_card(Some(&cuda_build::GpuChoice::LegacyIndex(7)), None), None, "nvidia-smi did not answer: the card is not called gone");
     }
 
     /// A karaoke is counted made only once it is stored: a save that fails counts it failed, with the reason.
@@ -11196,7 +11235,7 @@ mod tests {
         let code = engine_failure_code(missing);
         assert_eq!(code, "engine runtime not found");
         assert!(!code.contains("someone"), "no path reaches the hub: {code}");
-        let card = missing_chosen_card(Some(3), Some(&[(0, "NVIDIA GeForce RTX 4090".into(), 24.0)])).expect("card 3 is not there");
+        let card = missing_chosen_card(Some(&cuda_build::GpuChoice::LegacyIndex(3)), Some(&[test_nvidia_card()])).expect("card 3 is not there");
         assert_eq!(engine_failure_code(&card), "chosen card not present");
         assert_eq!(engine_failure_code("something new"), "other");
     }
