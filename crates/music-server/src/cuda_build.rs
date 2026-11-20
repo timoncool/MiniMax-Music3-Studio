@@ -63,7 +63,8 @@ pub(crate) fn cuda_visible_device() -> Option<String> {
 }
 
 pub(crate) fn valid_gpu_uuid(value: &str) -> bool {
-    value.strip_prefix("GPU-").is_some_and(|uuid| uuid::Uuid::parse_str(uuid).is_ok())
+    let Some(raw) = value.strip_prefix("GPU-") else { return false };
+    uuid::Uuid::parse_str(raw).is_ok_and(|uuid| uuid.hyphenated().to_string().eq_ignore_ascii_case(raw))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -81,14 +82,12 @@ impl GpuChoice {
         })
     }
 
-    /// The NVML index from an older setting is resolved before it reaches CUDA.
+    /// Resolve an old ordinal before it reaches CUDA. A saved UUID can be
+    /// applied even when that device is temporarily missing from NVML.
     pub(crate) fn cuda_mask<'a>(&'a self, cards: Option<&'a [NvidiaCard]>) -> Option<&'a str> {
-        match cards {
-            Some(cards) => self.card(cards).map(|card| card.uuid.as_str()),
-            None => match self {
-                Self::Uuid(uuid) if valid_gpu_uuid(uuid) => Some(uuid),
-                _ => None,
-            },
+        match self {
+            Self::LegacyIndex(_) => self.card(cards?).map(|card| card.uuid.as_str()),
+            Self::Uuid(uuid) => valid_gpu_uuid(uuid).then_some(uuid.as_str()),
         }
     }
 }
@@ -363,7 +362,21 @@ mod tests {
         assert_eq!(explicit.cuda_mask(None), Some(second));
         let reordered = parse_cards(&format!("0, {first}, RTX 4090, 24564\n1, {second}, RTX 3060, 12288"));
         assert_eq!(explicit.cuda_mask(Some(&reordered)), Some(second));
-        assert_eq!(explicit.cuda_mask(Some(&[])), None);
+    }
+
+    #[test]
+    fn explicit_gpu_uuid_is_masked_even_if_the_card_is_missing_at_startup() {
+        let uuid = "GPU-00000000-0000-0000-0000-000000000001";
+        let other = "GPU-00000000-0000-0000-0000-000000000002";
+        let explicit = GpuChoice::Uuid(uuid.into());
+        let startup_cards = parse_cards(&format!("0, {other}, RTX 3060, 12288"));
+        assert!(explicit.card(&startup_cards).is_none());
+        assert_eq!(explicit.cuda_mask(Some(&startup_cards)), Some(uuid));
+        assert_eq!(explicit.cuda_mask(Some(&[])), Some(uuid));
+        let later_cards = parse_cards(&format!("0, {other}, RTX 3060, 12288\n1, {uuid}, RTX 4090, 24564"));
+        assert_eq!(explicit.card(&later_cards).unwrap().index, 1);
+        assert_eq!(explicit.cuda_mask(Some(&later_cards)), Some(uuid));
+        assert_eq!(GpuChoice::Uuid("GPU-00000000000000000000000000000001".into()).cuda_mask(None), None);
     }
 
     #[test]

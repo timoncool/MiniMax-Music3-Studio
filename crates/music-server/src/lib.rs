@@ -6308,7 +6308,10 @@ fn unresolved_legacy_cuda_choice(chosen: Option<&cuda_build::GpuChoice>, applied
 /// Settings. Called by the desktop shell and standalone service before CUDA starts.
 pub fn apply_saved_gpu() {
     let Some(chosen) = load_studio_settings(&studio_settings_path()).and_then(|settings| settings.engine_options.gpu) else { return };
-    let cards = cuda_build::nvidia_cards();
+    let cards = match chosen {
+        cuda_build::GpuChoice::LegacyIndex(_) => cuda_build::nvidia_cards(),
+        cuda_build::GpuChoice::Uuid(_) => None,
+    };
     let Some(uuid) = chosen.cuda_mask(cards.as_deref()) else { return };
     // SAFETY: called first thing in the process, before the service and its
     // runtimes read the environment; on Windows the variables are set through
