@@ -5407,12 +5407,19 @@ async fn start_engine_again(state: &AppState) -> Result<(), String> {
     // actually takes on launch, so the fetch belongs here rather than only in
     // the endpoint nothing calls.
     let options = state.engine_options.read().await.clone();
-    if options.backend == music_engine::mm_server::ComputeBackend::Cuda && cuda_build::current().is_none() {
-        return Err(cuda_build::UNSUPPORTED.into());
-    }
-    // nvidia-smi is a process of its own: asked off the async workers, and only for a chosen card
+    use music_engine::mm_server::ComputeBackend;
     let chosen_card = options.gpu.as_ref();
-    if chosen_card.is_some() {
+    let legacy_cuda_problem = unresolved_legacy_cuda_choice(chosen_card, APPLIED_LEGACY_GPU.get().copied());
+    if options.backend == ComputeBackend::Cuda {
+        if let Some(problem) = legacy_cuda_problem {
+            return Err(problem);
+        }
+        if cuda_build::current().is_none() {
+            return Err(cuda_build::UNSUPPORTED.into());
+        }
+    }
+    // nvidia-smi is a process of its own: asked off the async workers, and only for a chosen card.
+    if chosen_card.is_some() && legacy_cuda_problem.is_none() {
         let cards = tokio::task::spawn_blocking(cuda_build::nvidia_cards)
             .await
             .map_err(|error| format!("the graphics card chosen in Settings - Local engine was not looked for: {error}"))?;
@@ -5430,7 +5437,13 @@ async fn start_engine_again(state: &AppState) -> Result<(), String> {
             note_once("nvidia-smi did not answer, so the graphics card chosen in Settings - Local engine is not checked; the engine starts as before");
         }
     }
-    let chain = options.device_chain(&state.failed_devices.read().await);
+    let mut chain = options.device_chain(&state.failed_devices.read().await);
+    if let Some(problem) = legacy_cuda_problem {
+        if chain.contains(&ComputeBackend::Cuda) {
+            music_engine::mm_server::note_in_log(&problem);
+            chain.retain(|device| *device != ComputeBackend::Cuda);
+        }
+    }
     let mut last_error = String::new();
     for (index, device) in chain.iter().copied().enumerate() {
         let attempt = EngineOptions { backend: device, ..options.clone() };
@@ -6281,6 +6294,16 @@ pub fn studio_data_root() -> Option<PathBuf> {
     None
 }
 
+// The legacy index must have been resolved before launching the studio's workers.
+static APPLIED_LEGACY_GPU: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+
+fn unresolved_legacy_cuda_choice(chosen: Option<&cuda_build::GpuChoice>, applied_index: Option<u32>) -> Option<String> {
+    let cuda_build::GpuChoice::LegacyIndex(index) = chosen? else { return None };
+    (applied_index != Some(*index)).then(|| format!(
+        "CUDA cannot use the saved NVIDIA card (number {index}): the studio did not apply its physical GPU UUID at launch. Check that nvidia-smi lists the card, then restart the studio and retry, or select Auto or Processor."
+    ))
+}
+
 /// Points every CUDA process of the studio at the physical card chosen in
 /// Settings. Called by the desktop shell and standalone service before CUDA starts.
 pub fn apply_saved_gpu() {
@@ -6293,6 +6316,9 @@ pub fn apply_saved_gpu() {
     unsafe {
         env::set_var("CUDA_DEVICE_ORDER", "PCI_BUS_ID");
         env::set_var("CUDA_VISIBLE_DEVICES", uuid);
+    }
+    if let cuda_build::GpuChoice::LegacyIndex(index) = chosen {
+        let _ = APPLIED_LEGACY_GPU.set(index);
     }
 }
 
@@ -6403,7 +6429,10 @@ async fn compose_setup_status(state: &AppState, manager_status: model_manager::M
         // what the running engine computes on, so a run on the processor is seen in the window
         fields.insert("engine_device".into(), serde_json::to_value(*state.active_device.read().await).unwrap_or(Value::Null));
         let chosen_card = state.engine_options.read().await.gpu.clone();
+        let explicit_cuda = state.engine_options.read().await.backend == music_engine::mm_server::ComputeBackend::Cuda;
+        let legacy_cuda_problem = unresolved_legacy_cuda_choice(chosen_card.as_ref(), APPLIED_LEGACY_GPU.get().copied());
         let problem = match chosen_card {
+            Some(_) if legacy_cuda_problem.is_some() => if explicit_cuda { legacy_cuda_problem } else { None },
             Some(_) => tokio::task::spawn_blocking(move || missing_chosen_card(chosen_card.as_ref(), cuda_build::nvidia_cards().as_deref()))
             .await
             .unwrap_or_else(|error| Some(format!("the graphics card chosen in Settings - Local engine was not looked for: {error}"))),
@@ -10699,6 +10728,18 @@ mod tests {
         assert_eq!(body["cards"][0]["uuid"], cards[0].uuid);
         assert_eq!(body["chosen_uuid"], cards[0].uuid);
         assert_eq!(body["running_uuid"], cards[0].uuid);
+    }
+
+    #[test]
+    fn a_late_nvidia_probe_does_not_apply_a_legacy_choice() {
+        let legacy = cuda_build::GpuChoice::LegacyIndex(0);
+        assert_eq!(legacy.cuda_mask(None), None);
+        let cards = [test_nvidia_card()];
+        assert_eq!(legacy.cuda_mask(Some(&cards)), Some(cards[0].uuid.as_str()));
+        assert!(unresolved_legacy_cuda_choice(Some(&legacy), None).unwrap().contains("restart the studio and retry"));
+        assert!(unresolved_legacy_cuda_choice(Some(&legacy), Some(1)).is_some());
+        assert_eq!(unresolved_legacy_cuda_choice(Some(&legacy), Some(0)), None);
+        assert_eq!(unresolved_legacy_cuda_choice(None, None), None);
     }
 
     fn test_nvidia_card() -> cuda_build::NvidiaCard {
