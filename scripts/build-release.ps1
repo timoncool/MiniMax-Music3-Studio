@@ -212,6 +212,7 @@ try {
             }
         }
     }
+    $latest.platforms['windows-x86_64-nsis'] = $latest.platforms['windows-x86_64']
     # Windows PowerShell has no utf8NoBOM encoding, and a byte-order mark in
     # front of the JSON is enough for the updater to reject the manifest.
     [System.IO.File]::WriteAllText(
