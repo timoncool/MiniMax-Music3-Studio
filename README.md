@@ -9,7 +9,7 @@
 
 **Development has moved to YuE2 Studio. Updates for the native MiniMax Music 3 engine now ship there. This standalone studio has reached its final release.**
 
-[Download YuE2 Studio 5.0](https://github.com/timoncool/YuE2-Studio/releases/tag/v5.0.0) · [Library migration guide](https://github.com/timoncool/YuE2-Studio/blob/b84ee50dae32f5e0caa524ee97bc8c79d66b44e3/README.md#bring-your-ace-step-or-minimax-library-into-yue2) · [Previous MiniMax Music3 Studio releases](https://github.com/timoncool/MiniMax-Music3-Studio/releases)
+[Download YuE2 Studio 5.0](https://github.com/timoncool/YuE2-Studio/releases/tag/v5.0.0) · [Library migration guide](https://github.com/timoncool/YuE2-Studio/blob/v5.0.0/README.md#bring-your-ace-step-or-minimax-library-into-yue2) · [Previous MiniMax Music3 Studio releases](https://github.com/timoncool/MiniMax-Music3-Studio/releases)
 
 In YuE2, open **Library → Import → ACE-Step or MiniMax library**. Select your MiniMax Music3 Studio installation from the list. If it is missing, use **Choose old Studio folder** to open the folder containing `library.sqlite`. For a portable copy, this is usually the `data` folder beside the old app. Review the songs and playlists, then select **Copy library into YuE2**. Your original files stay in place.
 
