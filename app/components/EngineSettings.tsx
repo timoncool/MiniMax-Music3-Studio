@@ -48,8 +48,8 @@ interface EngineOptions {
   flash_attention: FlashAttention;
   split_cfg_forwards: boolean;
   clamp_fp16: boolean;
-  /** The NVIDIA card by nvidia-smi index; null: the first. Taken at the studio's start. */
-  gpu?: number | null;
+  /** The physical NVIDIA UUID, or an nvidia-smi index saved by older versions; null: Auto. Taken at the studio's start. */
+  gpu?: string | number | null;
   /** Any other launch flag, as one line. It reaches the engine after the flags above. */
   extra_args: string;
   /** A hand-built engine (minimaxmusic.cpp) to run instead of the bundled one; null: the bundled engine. */
@@ -83,10 +83,12 @@ const Toggle: React.FC<{ label: string; hint: string; checked: boolean; onChange
 
 export const EngineSettings: React.FC = () => {
   const { t } = useI18n();
-  const { data: setup } = useSetupStatus<{ hardware?: { onProcessor?: boolean } }>();
+  const { data: setup } = useSetupStatus<{ platform?: string; hardware?: { onProcessor?: boolean } }>();
+  const isMac = setup?.platform === 'macos';
+  const backends: ComputeBackend[] = isMac ? ['auto', 'cpu'] : ['auto', 'cuda', 'vulkan', 'cpu'];
   const [options, setOptions] = useState<EngineOptions>(DEFAULTS);
   // With two cards or more, or a chosen card no longer in the computer, which one the studio computes on
-  const [cards, setCards] = useState<{ cards: { index: number; name: string; memory_gb: number }[] | null; running: number | null; chosen_missing: string | null } | null>(null);
+  const [cards, setCards] = useState<{ cards: { index: number; uuid: string; name: string; memory_gb: number }[] | null; running: number | null; running_uuid?: string | null; chosen_missing: string | null } | null>(null);
   useEffect(() => {
     void fetch('/v1/system/gpus').then(response => (response.ok ? response.json() : null)).then(setCards).catch(() => undefined);
   }, []);
@@ -146,6 +148,13 @@ export const EngineSettings: React.FC = () => {
 
   useEffect(() => { void load(); }, [load]);
 
+  const cardIdentity = (value?: string | number | null) =>
+    typeof value === 'number' ? cards?.cards?.find(card => card.index === value)?.uuid ?? String(value) : value ?? null;
+  const chosenCard = cardIdentity(options.gpu);
+  const runningCard = cards?.running_uuid ?? cardIdentity(cards?.running);
+  const selectedCard = cards?.cards?.find(card => card.uuid.toLowerCase() === chosenCard?.toLowerCase());
+  const cardMissing = chosenCard !== null && !selectedCard;
+
   const dirty = JSON.stringify(options) !== JSON.stringify(saved);
 
   const save = async () => {
@@ -156,7 +165,7 @@ export const EngineSettings: React.FC = () => {
       const response = await fetch('/engine/options', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(options),
+        body: JSON.stringify({ ...options, gpu: selectedCard?.uuid ?? options.gpu }),
       });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.error || `Saving the engine options failed (${response.status})`);
@@ -212,7 +221,7 @@ export const EngineSettings: React.FC = () => {
       <div className="rounded-xl border border-zinc-200 p-3 dark:border-white/10">
         <span className="block text-sm font-medium text-zinc-800 dark:text-zinc-100">{t('computeBackendLabel')}</span>
         <div className="mt-2 grid grid-cols-2 gap-1 rounded-lg bg-zinc-100 p-1 sm:grid-cols-4 dark:bg-black/30" role="radiogroup" aria-label={t('computeBackendLabel')}>
-          {(['auto', 'cuda', 'vulkan', 'cpu'] as const).map(value => (
+          {backends.map(value => (
             <button
               key={value}
               type="button"
@@ -225,27 +234,27 @@ export const EngineSettings: React.FC = () => {
             </button>
           ))}
         </div>
-        <span className="mt-2 block text-xs leading-5 text-zinc-500 dark:text-zinc-400">{t(`computeBackendHint_${options.backend}`)}</span>
-        {setup?.hardware?.onProcessor && <span className="mt-2 block text-xs leading-5 text-amber-700 dark:text-amber-300">{t('songsOnProcessor')}</span>}
+        <span className="mt-2 block text-xs leading-5 text-zinc-500 dark:text-zinc-400">{t(isMac && options.backend !== 'cpu' ? 'computeBackendHint_mac' : `computeBackendHint_${options.backend}`)}</span>
+        {setup?.hardware?.onProcessor && <span className="mt-2 block text-xs leading-5 text-amber-700 dark:text-amber-300">{t(isMac ? 'songsOnProcessorMac' : 'songsOnProcessor')}</span>}
       </div>
 
-      {cards?.cards && (cards.cards.length > 1 || cards.chosen_missing != null || (options.gpu != null && !cards.cards.some(card => card.index === options.gpu))) && (
+      {!isMac && cards?.cards && (cards.cards.length > 1 || cards.chosen_missing != null || cardMissing) && (
         <label className="block rounded-xl border border-zinc-200 p-3 dark:border-white/10">
           <span className="block text-sm font-medium text-zinc-800 dark:text-zinc-100">{t('gpuChoice')}</span>
           <select
-            value={options.gpu == null ? '' : String(options.gpu)}
-            onChange={event => setOptions(current => ({ ...current, gpu: event.target.value === '' ? null : Number(event.target.value) }))}
+            value={selectedCard?.uuid ?? chosenCard ?? ''}
+            onChange={event => setOptions(current => ({ ...current, gpu: event.target.value || null }))}
             className={`${CONTROL} mt-2`}
           >
             <option value="">{t('gpuChoiceFirst')}</option>
-            {options.gpu != null && !cards.cards.some(card => card.index === options.gpu) && <option value={String(options.gpu)}>{t('gpuChoiceMissing').replace('{index}', String(options.gpu))}</option>}
-            {cards.cards.map(card => <option key={card.index} value={card.index}>{`${card.index}: ${card.name} · ${card.memory_gb.toFixed(0)} GB`}</option>)}
+            {cardMissing && <option value={String(chosenCard)}>{t('gpuChoiceMissing').replace('{index}', String(chosenCard))}</option>}
+            {cards.cards.map(card => <option key={card.uuid} value={card.uuid}>{`${card.index}: ${card.name} · ${card.memory_gb.toFixed(0)} GB`}</option>)}
           </select>
-          {options.gpu != null && !cards.cards.some(card => card.index === options.gpu) ? (
-            <span className="mt-2 block text-xs leading-5 text-amber-600 dark:text-amber-300">{t('gpuChoiceGone').replace('{index}', String(options.gpu))}</span>
+          {cardMissing ? (
+            <span className="mt-2 block text-xs leading-5 text-amber-600 dark:text-amber-300">{t('gpuChoiceGone').replace('{index}', String(chosenCard))}</span>
           ) : (
             <span className="mt-2 block text-xs leading-5 text-zinc-500 dark:text-zinc-400">
-              {(options.gpu ?? null) !== (cards.running ?? null) ? t('gpuChoiceRestart') : t('gpuChoiceHint')}
+              {chosenCard?.toLowerCase() !== runningCard?.toLowerCase() ? t('gpuChoiceRestart') : t('gpuChoiceHint')}
             </span>
           )}
         </label>

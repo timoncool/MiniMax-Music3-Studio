@@ -46,6 +46,7 @@ type DownloadJob = {
 };
 
 type SetupStatus = {
+  platform?: string;
   ready: boolean;
   selected_profile_id?: string | null;
   selected_component_ids?: string[] | null;
@@ -883,7 +884,9 @@ export const SetupGate: React.FC<{ onReady?: () => void; mode?: 'first-run' | 's
           {mode === 'first-run' ? t('setupSubtitle') : t('resourcesSubtitle')}
         </p>
 
-        {mode === 'settings' && <WhereItRuns trainingVram={trainingInfo?.min_vram_gb ?? null} />}
+        {mode === 'settings' && (status?.platform === 'macos'
+          ? <p className="mt-5 text-sm text-zinc-500 dark:text-zinc-400">{t('computeBackendHint_mac')}</p>
+          : <WhereItRuns trainingVram={trainingInfo?.min_vram_gb ?? null} />)}
         {mode === 'settings' && <div className="mt-4"><RescanButton onDone={() => void refresh().catch((problem: unknown) => setError(problem instanceof Error ? problem.message : String(problem)))} /></div>}
         {mode === 'settings' && (
           <details className="group mt-4 overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-white/10 dark:bg-suno-card" onToggle={(event) => setUpdateOpen(event.currentTarget.open)}>
@@ -921,7 +924,7 @@ export const SetupGate: React.FC<{ onReady?: () => void; mode?: 'first-run' | 's
             ? `${status?.hardware?.gpuName ?? ''}${status?.hardware?.totalVramGb ? `, ${status.hardware.totalVramGb.toFixed(1)} GB` : ''}${status?.hardware?.vulkan ? ` (${t('recommendedOnVulkan')})` : ''} — ${recommended.label} · ${bytes(recommended.total_bytes)}`
             : status?.hardware?.reason || t('recommendedFallback')}
           . {t('setupResumable')}
-          {status?.hardware?.onProcessor && <span className="mt-2 block text-amber-700 dark:text-amber-300">{t('songsOnProcessor')}</span>}
+          {status?.hardware?.onProcessor && <span className="mt-2 block text-amber-700 dark:text-amber-300">{t(status.platform === 'macos' ? 'songsOnProcessorMac' : 'songsOnProcessor')}</span>}
         </div>}
 
 
